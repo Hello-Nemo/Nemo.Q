@@ -1,0 +1,108 @@
+import type { Metadata } from 'next';
+import { Inter, Outfit, JetBrains_Mono, Noto_Sans_SC } from 'next/font/google';
+import './globals.css';
+
+const inter = Inter({ 
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
+
+const outfit = Outfit({ 
+  subsets: ['latin'],
+  variable: '--font-outfit',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({ 
+  subsets: ['latin'],
+  variable: '--font-jetbrains',
+  display: 'swap',
+});
+
+const notoMain = Noto_Sans_SC({
+  subsets: ['latin'],
+  weight: ['400', '500', '700'],
+  variable: '--font-noto',
+  display: 'swap',
+});
+
+export const metadata: Metadata = {
+  title: '智能问数 Agent',
+  description: '基于 Vercel AI SDK 的智能 PostgreSQL 数据分析助理',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html 
+      lang="zh" 
+      suppressHydrationWarning
+      className={`${inter.variable} ${outfit.variable} ${jetbrainsMono.variable} ${notoMain.variable}`}
+    >
+      <head>
+        {/* CRITICAL CSS INLINE - Ensures layout is correct before external CSS/JS loads */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          html, body { 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden;
+            background: #FFFFFF; /* Default Light */
+          }
+          [data-theme='dark'] { background: #0B0F1A; }
+          
+          /* Visibility Guard: Hide body until layout is ready to prevent FOUC */
+          body { 
+            opacity: 0; 
+            transition: opacity 0.2s ease-in; 
+          }
+          body.is-ready { 
+            opacity: 1; 
+          }
+
+          /* Critical Infrastructure Classes */
+          .workbench-root { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+          .workbench-body { flex: 1; display: flex; flex-direction: row; height: 100%; overflow: hidden; min-width: 0; }
+          .chat-col { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; position: relative; overflow: hidden; }
+          .canvas-col { flex-shrink: 0; height: 100%; display: flex; border-left: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+          .sidebar-slot { flex-shrink: 0; height: 100%; border-right: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        ` }} />
+        
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  // 1. Immediate Theme Application
+                  var theme = localStorage.getItem('theme') || 'light';
+                  document.documentElement.setAttribute('data-theme', theme);
+                  
+                  // 2. Visibility Activation
+                  function markReady() {
+                    document.body.classList.add('is-ready');
+                  }
+                  
+                  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+                    markReady();
+                  } else {
+                    window.addEventListener('DOMContentLoaded', markReady);
+                  }
+                  
+                  // 3. Fail-safe timeout (max 500ms hide)
+                  setTimeout(markReady, 500);
+                } catch (e) {
+                  document.body.style.opacity = '1';
+                }
+              })()
+            `,
+          }}
+        />
+      </head>
+      <body suppressHydrationWarning>{children}</body>
+    </html>
+  );
+}

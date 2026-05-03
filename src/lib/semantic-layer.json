@@ -1,0 +1,98 @@
+{
+  "tables": {
+    "users": {
+      "description": "用户信息表，记录已注册客户的基本资料。",
+      "columns": {
+        "id": "用户唯一标识",
+        "username": "用户登录名/全名",
+        "email": "电子邮箱地址",
+        "country": "用户所属国家，用于地域分析",
+        "joined_at": "注册时间，可用于计算用户增长和留存"
+      }
+    },
+    "products": {
+      "description": "产品信息表，包含库存和分类数据。",
+      "columns": {
+        "id": "产品唯一标识",
+        "name": "产品名称",
+        "category": "产品所属分类（如：Electronics, Clothing, Furniture）",
+        "price": "产品销售价格（单价）",
+        "stock": "当前库存数量",
+        "created_at": "产品上架时间"
+      },
+      "thresholds": {
+        "stock": {
+          "warning": 20,
+          "critical": 10,
+          "description": "库存低于 20 为预警，低于 10 为极度紧缺"
+        }
+      }
+    },
+    "orders": {
+      "description": "订单交易表，记录所有成功的购买行为。",
+      "columns": {
+        "id": "订单唯一标识",
+        "user_id": "下单用户的 ID，关联 users.id",
+        "product_id": "购买产品的 ID，关联 products.id",
+        "quantity": "购买数量",
+        "total_price": "该订单的总金额（已含折扣和税费）",
+        "order_date": "下单日期"
+      },
+      "thresholds": {
+        "total_price": {
+          "high_value": 500,
+          "description": "单笔金额超过 500 被视为高价值订单，值得关注"
+        }
+      }
+    }
+  },
+  "metrics": {
+    "复购率": "指在一个时间周期内，购买过两次或两次以上产品的用户占总购买用户的比例。正常范围：15%-30%，低于 10% 视为客户流失风险。",
+    "客单价": "订单总金额除以订单总数。若较上月波动超过 20%，需进行归因分析。",
+    "异常检测规则": {
+      "库存警戒线": "stock < 20 (预警线)",
+      "库存风险": "stock < 10 (极度紧缺)",
+      "高价值机会": "total_price > 1000",
+      "滞销分析": "最近 60 天无订单且库存 > 50 的产品"
+    }
+  },
+  "common_queries": [
+    {
+      "question": "分析核心忠诚客户的表现",
+      "sql": "SELECT u.username, COUNT(o.id) as order_count, SUM(o.total_price) as total_spent FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.username HAVING COUNT(o.id) > 3 ORDER BY total_spent DESC",
+      "explanation": "关联用户表和订单表，筛选订单量大于 3 的用户作为忠诚客户。"
+    },
+    {
+      "question": "哪些产品目前存在滞销风险？",
+      "sql": "SELECT p.name, p.stock FROM products p LEFT JOIN orders o ON p.id = o.product_id AND o.order_date > CURRENT_DATE - INTERVAL '60 days' WHERE o.id IS NULL AND p.stock > 50",
+      "explanation": "查找最近 60 天无订单且库存大于 50 的产品。"
+    },
+    {
+      "question": "哪些产品的库存已经低于警戒线了？",
+      "sql": "SELECT name, stock FROM products WHERE stock < 20",
+      "explanation": "根据业务定义，库存警戒线（预警线）为 20。"
+    },
+    {
+      "question": "分析上个月的销售环比增长情况",
+      "sql": "WITH monthly_sales AS (SELECT DATE_TRUNC('month', order_date) as month, SUM(total_price) as revenue FROM orders GROUP BY 1) SELECT m1.month, m1.revenue, ((m1.revenue - m2.revenue) / NULLIF(m2.revenue, 0)) * 100 as growth_rate FROM monthly_sales m1 LEFT JOIN monthly_sales m2 ON m1.month = m2.month + INTERVAL '1 month' ORDER BY m1.month DESC LIMIT 2",
+      "explanation": "使用 CTE 计算每月总销售额，并通过自关联计算环比增长率。NULLIF 用于防止除零错误。"
+    },
+    {
+      "question": "谁是本季度贡献额最高的 5 位用户？",
+      "sql": "SELECT u.username, SUM(o.total_price) as quarterly_spent FROM users u JOIN orders o ON u.id = o.user_id WHERE o.order_date >= DATE_TRUNC('quarter', CURRENT_DATE) GROUP BY u.id, u.username ORDER BY quarterly_spent DESC LIMIT 5",
+      "explanation": "关联用户表与订单表，过滤当前季度的订单，按消费总额降序排列。"
+    }
+  ],
+  "join_paths": [
+    {
+      "tables": ["users", "orders"],
+      "on": "users.id = orders.user_id",
+      "description": "分析用户消费行为"
+    },
+    {
+      "tables": ["products", "orders"],
+      "on": "products.id = orders.product_id",
+      "description": "分析产品销售情况"
+    }
+  ]
+}

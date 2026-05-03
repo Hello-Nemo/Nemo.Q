@@ -1,0 +1,9 @@
+FROM postgres:16-alpine
+
+# 将初始化脚本复制到镜像中
+COPY ./db/init/01-data.sql /docker-entrypoint-initdb.d/
+
+# 设置环境变量（可选，推荐在运行时或 docker-compose 中设置）
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=postgres
+ENV POSTGRES_DB=postgres

@@ -1,0 +1,42 @@
+{
+  "name": "ai-sdk-demo",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "cli": "tsx scripts/cli.ts",
+    "eval": "tsx -r dotenv/config scripts/run-eval.ts",
+    "onboard": "tsx scripts/onboard-db.ts",
+    "build": "next build",
+    "start": "next start",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@ai-sdk/deepseek": "^2.0.32",
+    "@ai-sdk/react": "^3.0.176",
+    "ai": "^6.0.174",
+    "dotenv": "^17.4.2",
+    "lucide-react": "^1.14.0",
+    "next": "^16.2.4",
+    "pg": "^8.20.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.8.1",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "@types/react": "19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}

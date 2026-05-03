@@ -1,0 +1,34 @@
+[
+  {
+    "id": "q1",
+    "category": "基础查询",
+    "difficulty": "easy",
+    "question": "列出所有来自中国的用户",
+    "gold_sql": "SELECT * FROM users WHERE country IN ('China', '中国')",
+    "criteria": "country|China/中国"
+  },
+  {
+    "id": "q2",
+    "category": "指标计算",
+    "difficulty": "medium",
+    "question": "计算上个月的总销售额",
+    "gold_sql": "SELECT SUM(total_price) FROM orders WHERE order_date >= ...",
+    "criteria": "SUM|total_price|order_date"
+  },
+  {
+    "id": "q3",
+    "category": "关联分析",
+    "difficulty": "hard",
+    "question": "找出购买过 Electronics 类产品次数最多的前 3 名用户",
+    "gold_sql": "SELECT u.username, COUNT(o.id) FROM users u JOIN orders o ON u.id = o.user_id ...",
+    "criteria": "JOIN|category|电子产品/Electronics|COUNT|LIMIT"
+  },
+  {
+    "id": "q4",
+    "category": "异常检测",
+    "difficulty": "medium",
+    "question": "哪些产品的库存已经低于警戒线了？",
+    "gold_sql": "SELECT name, stock FROM products WHERE stock < 20",
+    "criteria": "stock|<|20"
+  }
+]
