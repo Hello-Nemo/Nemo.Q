@@ -1,0 +1,33 @@
+<svg width="200" height="200" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    /* 顶级自适应色彩策略 */
+    .n-stroke { stroke: #111; }
+    @media (prefers-color-scheme: dark) {
+      .n-stroke { stroke: #eee; }
+    }
+  </style>
+  
+  <!-- N 的几何表达：自适应主题 -->
+  <path
+    d="M20 80 V 20 L 50 50"
+    class="n-stroke"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+  
+  <!-- Q 的几何表达：警戒橙 (#FF5C00) -->
+  <rect
+    x="45" y="25" width="45" height="45"
+    stroke="#FF5C00"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+
+  <!-- Q 的锐利尾部 -->
+  <path
+    d="M80 70 L95 85"
+    stroke="#FF5C00"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+</svg>
