@@ -24,11 +24,27 @@
     "criteria": "JOIN|category|电子产品/Electronics|COUNT|LIMIT"
   },
   {
-    "id": "q4",
-    "category": "异常检测",
+    "id": "p2-aov",
+    "category": "Phase 2: 高级语义",
     "difficulty": "medium",
-    "question": "哪些产品的库存已经低于警戒线了？",
-    "gold_sql": "SELECT name, stock FROM products WHERE stock < 20",
-    "criteria": "stock|<|20"
+    "question": "我想看下各个国家的客单价 (AOV) 是多少？",
+    "gold_sql": "SELECT ... FROM orders JOIN users ... GROUP BY ...",
+    "criteria": "aov|user_country|semanticQuery"
+  },
+  {
+    "id": "p2-age-group",
+    "category": "Phase 2: 衍生维度",
+    "difficulty": "medium",
+    "question": "按年龄段 (Age Group) 统计一下最近一个月的订单量。",
+    "gold_sql": "SELECT ... CASE WHEN ... END ... FROM orders JOIN users ...",
+    "criteria": "age_group|order_count|last_month|semanticQuery"
+  },
+  {
+    "id": "p2-mom",
+    "category": "Phase 2: 时间智能",
+    "difficulty": "hard",
+    "question": "对比一下最近一个月和上个月的销售额变化。",
+    "gold_sql": "WITH current_period AS ... historical_period AS ...",
+    "criteria": "sales_amount|comparison|MoM|semanticQuery"
   }
 ]

@@ -39,20 +39,30 @@ async function runEval() {
         stepSummary.push(`Step ${idx + 1}: ${toolNames}`);
 
         step.toolCalls?.forEach(call => {
+          const args = (call as any).input || (call as any).args;
           if (call.toolName === 'executeQuery') {
-            const args = (call as any).input || (call as any).args;
-            if (args) {
-              generatedSql = args.sql;
+            if (args) generatedSql = args.sql;
+          }
+          if (call.toolName === 'semanticQuery') {
+            if (args && args.plan) {
+              // 标记使用了语义查询
+              generatedSql += ` [semanticQuery: ${JSON.stringify(args.plan)}]`;
             }
           }
           if (call.toolName === 'getTableSamples') {
             usedSampling = true;
           }
         });
+
         step.toolResults?.forEach(result => {
+          // 如果是 semanticQuery，尝试从审计信息中提取生成的 SQL 用于校验
+          if (result.toolName === 'semanticQuery' && result.result && (result.result as any).audit) {
+            generatedSql = (result.result as any).audit.sql;
+          }
+
           if (result.result && (result.result as any).error) {
             stepSummary[idx] += ` (Error: ${(result.result as any).error})`;
-            if (result.toolName === 'executeQuery') {
+            if (result.toolName === 'executeQuery' || result.toolName === 'semanticQuery') {
               hasError = true;
             }
           }

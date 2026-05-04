@@ -79,8 +79,38 @@ function runTest() {
         dimensions: [{ id: 'user_country' }],
         filters: []
       }
+    },
+    {
+      name: 'Calculated Metric (AOV)',
+      plan: {
+        intent: 'metric_query',
+        metrics: [{ id: 'aov' }],
+        dimensions: [{ id: 'user_country' }],
+        filters: []
+      }
+    },
+    {
+      name: 'Derived Dimension (Age Group)',
+      plan: {
+        intent: 'metric_query',
+        metrics: [{ id: 'order_count' }],
+        dimensions: [{ id: 'age_group' }],
+        filters: []
+      }
+    },
+    {
+      name: 'Time Intelligence (MoM Comparison)',
+      plan: {
+        intent: 'comparison',
+        metrics: [{ id: 'sales_amount' }],
+        dimensions: [{ id: 'user_country' }],
+        timeRange: { type: 'preset', value: 'last_month' },
+        comparison: { type: 'MoM' },
+        filters: []
+      }
     }
   ];
+
 
 
 

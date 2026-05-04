@@ -59,7 +59,16 @@
       "expression": "SUM(returns.amount)",
       "description": "总退货金额",
       "entityId": "returns"
+    },
+    "aov": {
+      "id": "aov",
+      "name": "客单价",
+      "expression": "SUM(orders.total_price) / NULLIF(COUNT(orders.id), 0)",
+      "description": "平均订单金额",
+      "entityId": "orders",
+      "formula": "{{sales_amount}} / {{order_count}}"
     }
+
 
   },
   "dimensions": {
@@ -77,6 +86,15 @@
       "description": "产品所属分类",
       "entityId": "products"
     },
+    "age_group": {
+      "id": "age_group",
+      "name": "年龄段",
+      "column": "CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END",
+      "description": "根据用户年龄划分的年龄段",
+      "entityId": "users",
+      "transform": "CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END"
+    },
+
     "order_date": {
       "id": "order_date",
       "name": "下单日期",

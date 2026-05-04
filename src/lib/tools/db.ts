@@ -145,7 +145,43 @@ export const searchTables = tool({
   },
 });
 
+/**
+ * 检索语义资产 (指标、维度、实体)
+ */
+export const listSemanticAtoms = tool({
+  description: '查询语义层中可用的标准指标、维度和实体定义。当不确定业务字段名称或口径时使用。支持分页。',
+  inputSchema: z.object({
+    type: z.enum(['metrics', 'dimensions', 'entities', 'all']).default('all'),
+    keyword: z.string().optional().describe('搜索关键词'),
+    limit: z.number().default(20),
+    offset: z.number().default(0),
+  }),
+  execute: async ({ type, keyword, limit, offset }) => {
+    const layer = getSemanticLayer();
+    const result: any = {};
+
+    if (type === 'metrics' || type === 'all') {
+      result.metrics = Object.values(layer.metrics)
+        .filter(m => !keyword || m.name.includes(keyword) || m.id.includes(keyword) || m.description.includes(keyword))
+        .slice(offset, offset + limit);
+    }
+    if (type === 'dimensions' || type === 'all') {
+      result.dimensions = Object.values(layer.dimensions)
+        .filter(d => !keyword || d.name.includes(keyword) || d.id.includes(keyword) || d.description.includes(keyword))
+        .slice(offset, offset + limit);
+    }
+    if (type === 'entities' || type === 'all') {
+      result.entities = Object.values(layer.entities)
+        .filter(e => !keyword || e.table.includes(keyword) || e.id.includes(keyword) || e.description.includes(keyword))
+        .slice(offset, offset + limit);
+    }
+
+    return result;
+  },
+});
+
 export const askClarification = tool({
+
   description: '当用户的需求存在业务歧义、口径不明确或需要补充信息时调用。该工具会暂停当前任务并向用户寻求澄清。',
   inputSchema: z.object({
     question: z.string().describe('需要用户澄清的具体问题'),
@@ -177,7 +213,11 @@ export const semanticQuery = tool({
         type: z.enum(['preset', 'absolute']),
         value: z.string(),
       }).optional(),
+      comparison: z.object({
+        type: z.enum(['YoY', 'MoM', 'PoP']),
+      }).optional(),
       filters: z.array(z.object({
+
         field: z.string(),
         operator: z.enum(['=', '!=', '>', '<', '>=', '<=', 'in', 'between']),
         value: z.any(),
@@ -222,5 +262,7 @@ export const dbTools = {
   searchTables,
   askClarification,
   semanticQuery,
+  listSemanticAtoms,
 };
+
 

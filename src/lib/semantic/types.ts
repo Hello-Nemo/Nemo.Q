@@ -12,6 +12,7 @@ export interface Metric {
   timeColumn?: string;
   /** 指标是否已经过人工认证。 */
   certified?: boolean;
+  formula?: string; // 计算指标公式，如 {{sales_amount}} / {{order_count}}
 }
 
 export interface Dimension {
@@ -21,7 +22,9 @@ export interface Dimension {
   description: string;
   entityId: string;
   certified?: boolean;
+  transform?: string; // 衍生维度转换逻辑，如 CASE WHEN age < 18 THEN 'Minor' ELSE 'Adult' END
 }
+
 
 export interface Entity {
   id: string;
@@ -65,6 +68,9 @@ export interface QueryPlan {
     end?: string;
     column?: string;
   };
+  comparison?: {
+    type: 'YoY' | 'MoM' | 'PoP';
+  };
   filters: Array<{
     field: string;
     operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'in' | 'between';
@@ -91,3 +97,4 @@ export interface CompiledQuery {
     relationships: string[];
   };
 }
+

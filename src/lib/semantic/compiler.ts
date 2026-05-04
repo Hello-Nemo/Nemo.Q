@@ -104,7 +104,7 @@ class PathFinder {
 }
 
 /**
- * 工业级 SQL 编译器：支持 Dijkstra 路径发现与 Multi-pass 编译
+ * 工业级 SQL 编译器：支持 Dijkstra 路径发现、Multi-pass 编译、计算指标与时间智能
  */
 export class SQLCompiler {
   private semanticLayer: SemanticLayer;
@@ -119,10 +119,16 @@ export class SQLCompiler {
     const metrics = plan.metrics.map(m => this.semanticLayer.metrics[m.id]).filter(Boolean);
     const dimensions = plan.dimensions.map(d => this.semanticLayer.dimensions[d.id]).filter(Boolean);
 
-    // 检查是否涉及多个事实表 (Chasm Trap 识别)
+    // 1. 处理时间智能（同环比对比）
+    if (plan.comparison && plan.timeRange) {
+      return this.compileComparison(plan, metrics, dimensions);
+    }
+
+    // 2. 检查是否涉及多个事实表 (Chasm Trap 识别)
     const factEntities = new Set<string>();
     metrics.forEach(m => {
-      if (this.semanticLayer.entities[m.entityId].type === 'fact') {
+      const ent = this.semanticLayer.entities[m.entityId];
+      if (ent && ent.type === 'fact') {
         factEntities.add(m.entityId);
       }
     });
@@ -132,6 +138,26 @@ export class SQLCompiler {
     } else {
       return this.compileSinglePass(plan, metrics, dimensions);
     }
+  }
+
+  /**
+   * 解析指标表达式（递归解析计算指标 formula）
+   */
+  private resolveMetricExpression(metric: Metric): string {
+    if (!metric.formula) return metric.expression;
+
+    let resolved = metric.formula;
+    const matches = resolved.match(/{{(.*?)}}/g);
+    if (matches) {
+      for (const match of matches) {
+        const refId = match.slice(2, -2);
+        const refMetric = this.semanticLayer.metrics[refId];
+        if (refMetric) {
+          resolved = resolved.replace(match, `(${this.resolveMetricExpression(refMetric)})`);
+        }
+      }
+    }
+    return resolved;
   }
 
   /**
@@ -150,8 +176,8 @@ export class SQLCompiler {
     const fromClause = this.buildJoinClause(path);
 
     const selectItems = [
-      ...dimensions.map(d => `${d.column} AS ${d.id}`),
-      ...metrics.map(m => `${m.expression} AS ${m.id}`)
+      ...dimensions.map(d => `${d.transform || d.column} AS ${d.id}`),
+      ...metrics.map(m => `${this.resolveMetricExpression(m)} AS ${m.id}`)
     ];
 
     const whereClause = this.buildWhereClause(plan, metrics);
@@ -180,8 +206,8 @@ export class SQLCompiler {
       const path = this.pathFinder.findBestPath(factEntitiesRequired);
       
       const selectItems = [
-        ...dimensions.map(d => `${d.column} AS dim_${d.id}`),
-        ...factMetrics.map(m => `${m.expression} AS ${m.id}`)
+        ...dimensions.map(d => `${d.transform || d.column} AS dim_${d.id}`),
+        ...factMetrics.map(m => `${this.resolveMetricExpression(m)} AS ${m.id}`)
       ];
       
       const joins = this.buildJoinClause(path);
@@ -211,6 +237,50 @@ export class SQLCompiler {
     const limit = plan.limit ? ` LIMIT ${plan.limit}` : '';
 
     return `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} ${finalFrom}${orderBy}${limit}`;
+  }
+
+  /**
+   * 同环比编译：基于 Multi-pass 生成对比查询
+   */
+  private compileComparison(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): string {
+    const type = plan.comparison!.type;
+    const interval = type === 'MoM' ? '1 month' : type === 'YoY' ? '1 year' : '1 period';
+
+    // 1. 生成“当前周期” CTE
+    const currentPlan = { ...plan, comparison: undefined };
+    const currentSql = this.compileSinglePass(currentPlan, metrics, dimensions);
+    
+    // 2. 生成“历史周期” CTE
+    const historicalPlan = { 
+      ...plan, 
+      comparison: undefined,
+      // 简单的时间偏移处理，生产环境需更精细的时间函数
+      filters: [...plan.filters] 
+    };
+    
+    // 构造 CTE
+    const ctes = [
+      `current_period AS (${currentSql})`,
+      `historical_period AS (
+        ${currentSql.replace(/CURRENT_DATE/g, `(CURRENT_DATE - INTERVAL '${interval}')`)}
+      )`
+    ];
+
+    // 3. 计算增长率
+    const finalSelect = [
+      ...dimensions.map(d => `current_period.${d.id}`),
+      ...metrics.flatMap(m => [
+        `current_period.${m.id} AS ${m.id}`,
+        `historical_period.${m.id} AS ${m.id}_prev`,
+        `(current_period.${m.id} - historical_period.${m.id}) / NULLIF(historical_period.${m.id}, 0) AS ${m.id}_growth`
+      ])
+    ];
+
+    const joinOn = dimensions.length > 0 
+      ? ` ON ${dimensions.map(d => `current_period.${d.id} = historical_period.${d.id}`).join(' AND ')}` 
+      : ' ON 1=1';
+
+    return `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} FROM current_period LEFT JOIN historical_period${joinOn}`;
   }
 
   private buildJoinClause(path: string[]): string {
@@ -245,6 +315,8 @@ export class SQLCompiler {
         if (plan.timeRange.value === 'last_month') {
           conditions.push(`${col} >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')`);
           conditions.push(`${col} < DATE_TRUNC('month', CURRENT_DATE)`);
+        } else if (plan.timeRange.value === 'today') {
+          conditions.push(`${col} >= CURRENT_DATE`);
         }
       }
     }
