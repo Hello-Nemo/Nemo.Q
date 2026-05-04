@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Outfit, JetBrains_Mono, Noto_Sans_SC } from 'next/font/google';
+import Script from 'next/script';
+import { HistoryProvider } from '@/components/HistoryContext';
 import './globals.css';
 
 const inter = Inter({ 
@@ -71,38 +73,13 @@ export default function RootLayout({
           .canvas-col { flex-shrink: 0; height: 100%; display: flex; border-left: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
           .sidebar-slot { flex-shrink: 0; height: 100%; border-right: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         ` }} />
-        
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  // 1. Immediate Theme Application
-                  var theme = localStorage.getItem('theme') || 'light';
-                  document.documentElement.setAttribute('data-theme', theme);
-                  
-                  // 2. Visibility Activation
-                  function markReady() {
-                    document.body.classList.add('is-ready');
-                  }
-                  
-                  if (document.readyState === 'interactive' || document.readyState === 'complete') {
-                    markReady();
-                  } else {
-                    window.addEventListener('DOMContentLoaded', markReady);
-                  }
-                  
-                  // 3. Fail-safe timeout (max 500ms hide)
-                  setTimeout(markReady, 500);
-                } catch (e) {
-                  document.body.style.opacity = '1';
-                }
-              })()
-            `,
-          }}
-        />
+        <Script src="/theme.js" strategy="beforeInteractive" />
       </head>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <HistoryProvider>
+          {children}
+        </HistoryProvider>
+      </body>
     </html>
   );
 }

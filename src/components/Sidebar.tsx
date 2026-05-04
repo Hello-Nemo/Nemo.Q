@@ -1,22 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { 
-  History, 
-  Terminal, 
-  ChevronLeft, 
-  ChevronRight, 
+  PanelLeftClose, 
+  PanelLeftOpen,
   PlusCircle, 
-  Database,
-  Search,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
+  Sparkles,
   Settings,
   User,
-  LayoutGrid
+  MessageSquare,
+  Trash2
 } from 'lucide-react';
-import AnomalyAlertOverlay from './AnomalyAlertOverlay';
+import { useHistory } from './HistoryContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -24,26 +19,36 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  const sessions = [
-    { id: 1, title: '分析核心忠诚客户的表现', group: '今天', time: '10:24 AM' },
-    { id: 2, title: '月度客单价下降归因', group: '昨天', time: 'Yesterday' },
-    { id: 3, title: '库存预警分析', group: '过去 7 天', time: '2 days ago' },
-    { id: 4, title: '高价值订单分布', group: '过去 7 天', time: '5 days ago' },
-  ];
+  const { sessions, currentSessionId, selectSession, createSession, deleteSession } = useHistory();
 
-  const groups = ['今天', '昨天', '过去 7 天'];
+  const getGroup = (date: number) => {
+    const now = new Date();
+    const d = new Date(date);
+    if (d.toDateString() === now.toDateString()) return '今天';
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return '昨天';
+    return '较早前';
+  };
+
+  const groupedSessions = sessions.reduce((acc, s) => {
+    const group = getGroup(s.updatedAt);
+    if (!acc[group]) acc[group] = [];
+    acc[group].push(s);
+    return acc;
+  }, {} as Record<string, typeof sessions>);
+
+  const groups = ['今天', '昨天', '较早前'];
 
   return (
-    <div className="sidebar-inner">
+    <div className={`sidebar-inner ${collapsed ? 'collapsed' : ''}`}>
       {/* Top Section: Brand + New Chat */}
       <div className="top-section">
         <div className="sidebar-header">
           {!collapsed && (
             <div className="brand">
               <div className="brand-aura">
-                <Database size={16} />
+                <Sparkles size={16} fill="currentColor" />
               </div>
               <div className="brand-info">
                 <span className="brand-name">Lumina</span>
@@ -52,12 +57,15 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           )}
           <button onClick={onToggle} className="toggle-btn soft-surface">
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
         </div>
 
         <div className="action-area">
-          <button className={`new-analysis-btn ${collapsed ? 'collapsed' : ''} soft-surface`}>
+          <button 
+            onClick={() => createSession()}
+            className={`new-analysis-btn ${collapsed ? 'collapsed' : ''} soft-surface`}
+          >
             <PlusCircle size={20} className="plus-icon" />
             {!collapsed && <span>开启新洞察</span>}
             <div className="btn-glow" />
@@ -67,22 +75,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Middle Section: Search + History */}
       <div className="middle-section">
-        {!collapsed && (
-          <div className="search-box soft-surface">
-            <Search size={14} className="search-icon" />
-            <input 
-              type="text" 
-              placeholder="搜索历史..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="search-input"
-            />
-          </div>
-        )}
-
         <div className="history-zone">
           {groups.map(group => {
-            const groupSessions = sessions.filter(s => s.group === group);
+            const groupSessions = groupedSessions[group] || [];
             if (groupSessions.length === 0) return null;
             
             return (
@@ -90,14 +85,29 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 {!collapsed && <div className="group-label">{group}</div>}
                 <div className="group-items">
                   {groupSessions.map(session => (
-                    <div key={session.id} className={`history-item ${collapsed ? 'collapsed' : ''} soft-surface-hover`}>
-                      {collapsed ? <History size={18} /> : (
+                    <div 
+                      key={session.id} 
+                      onClick={() => selectSession(session.id)}
+                      className={`history-item ${collapsed ? 'collapsed' : ''} ${currentSessionId === session.id ? 'active' : ''} soft-surface-hover`}
+                    >
+                      <div className="item-icon-wrap">
+                        <MessageSquare size={14} />
+                      </div>
+                      {!collapsed && (
                         <>
                           <div className="item-main">
                             <span className="item-title">{session.title}</span>
                           </div>
                           <div className="item-actions">
-                            <button className="action-trigger"><MoreHorizontal size={14} /></button>
+                            <button 
+                              className="action-trigger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteSession(session.id);
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </>
                       )}
@@ -112,13 +122,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Bottom Section: Alerts + Settings + Profile */}
       <div className="bottom-section">
-        <AnomalyAlertOverlay collapsed={collapsed} />
         
         <div className="footer-links">
-          <div className={`footer-item ${collapsed ? 'collapsed' : ''} soft-surface-hover`}>
-            <LayoutGrid size={18} />
-            {!collapsed && <span>发现插件</span>}
-          </div>
           <div className={`footer-item ${collapsed ? 'collapsed' : ''} soft-surface-hover`}>
             <Settings size={18} />
             {!collapsed && <span>系统设置</span>}
@@ -146,8 +151,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           padding: 24px 12px;
           gap: 24px;
           background: transparent;
+          align-items: stretch;
+          transition: all 0.3s;
         }
+        .sidebar-inner.collapsed { align-items: center; padding: 24px 0; }
 
+        .sidebar-inner :global(svg) { flex-shrink: 0; }
         .top-section { display: flex; flex-direction: column; gap: 24px; }
         
         .sidebar-header {
@@ -159,29 +168,35 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         .brand { display: flex; align-items: center; gap: 12px; }
         .brand-aura {
           width: 32px; height: 32px;
-          background: white;
+          background: linear-gradient(135deg, #6366f1, #a855f7);
           border-radius: 10px;
           display: flex; align-items: center; justify-content: center;
-          color: var(--accent-primary);
-          box-shadow: var(--shadow-soft);
+          color: white;
+          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
           position: relative;
+          overflow: hidden;
         }
         .brand-aura::after {
-          content: ''; position: absolute; inset: -4px;
-          background: var(--accent-flow); filter: blur(8px); opacity: 0.15; border-radius: 12px; z-index: -1;
+          content: ''; position: absolute; inset: 0;
+          background: linear-gradient(transparent, rgba(255,255,255,0.2));
         }
         .brand-info { display: flex; flex-direction: column; }
-        .brand-name { font-size: 16px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
-        .brand-tag { font-family: var(--font-mono); font-size: 8px; font-weight: 800; color: var(--text-tertiary); letter-spacing: 0.1em; }
+        .brand-name { font-size: 16px; font-weight: 900; color: var(--text-primary); letter-spacing: -0.03em; }
+        .brand-tag { font-family: var(--font-mono); font-size: 8px; font-weight: 800; color: var(--accent-primary); letter-spacing: 0.1em; opacity: 0.8; }
 
         .toggle-btn {
-          width: 32px; height: 32px;
+          width: 36px; height: 36px;
           display: flex; align-items: center; justify-content: center;
-          border-radius: 10px;
+          border-radius: 12px;
           color: var(--text-tertiary);
           transition: all 0.3s var(--spring);
+          flex-shrink: 0;
         }
-        .toggle-btn:hover { color: var(--accent-primary); transform: scale(1.05); }
+        .toggle-btn:hover { 
+          color: var(--accent-primary); 
+          background: rgba(99, 102, 241, 0.05);
+          transform: scale(1.05); 
+        }
 
         .action-area { padding: 0 8px; }
         .new-analysis-btn {
@@ -195,7 +210,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           overflow: hidden;
           transition: all 0.4s var(--spring);
         }
-        .new-analysis-btn.collapsed { justify-content: center; padding: 14px 0; }
+        .new-analysis-btn.collapsed { width: 44px; height: 44px; padding: 0; justify-content: center; }
+        .new-analysis-btn :global(svg) { flex-shrink: 0; }
         .new-analysis-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-deep); border-color: var(--accent-primary); }
         .plus-icon { color: var(--accent-primary); }
         .btn-glow {
@@ -207,23 +223,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
         .middle-section { flex: 1; display: flex; flex-direction: column; gap: 20px; overflow: hidden; }
         
-        .search-box {
-          margin: 0 8px;
-          display: flex; align-items: center; gap: 10px;
-          padding: 10px 16px;
-          border-radius: 14px;
-        }
-        .search-icon { color: var(--text-tertiary); }
-        .search-input {
-          background: transparent;
-          border: none;
-          outline: none;
-          font-size: 13px;
-          color: var(--text-primary);
-          width: 100%;
-        }
-        .search-input::placeholder { color: var(--text-tertiary); opacity: 0.6; }
-
         .history-zone {
           flex: 1;
           overflow-y: auto;
@@ -246,17 +245,28 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           border-radius: 12px;
           cursor: pointer;
           position: relative;
-          transition: all 0.3s var(--spring);
+          transition: all 0.2s ease;
+          border: 1px solid transparent;
         }
-        .history-item.collapsed { justify-content: center; padding: 12px 0; color: var(--text-tertiary); }
-        .history-item:hover { transform: translateX(4px); }
-        .item-main { flex: 1; min-width: 0; }
-        .item-title { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-item :global(svg) { flex-shrink: 0; color: var(--text-tertiary); opacity: 0.5; transition: all 0.2s; }
+        .history-item:hover :global(svg) { color: var(--accent-primary); opacity: 1; }
+        .item-icon-wrap { display: flex; align-items: center; justify-content: center; width: 20px; flex-shrink: 0; }
+        .history-item.collapsed { width: 40px; height: 40px; padding: 0; justify-content: center; color: var(--text-tertiary); }
+        .history-item:hover { background: rgba(0,0,0,0.03); transform: translateX(4px); }
+        .history-item.collapsed:hover { transform: scale(1.1); background: white; }
+        .history-item.active { background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.2); }
+        .history-item.active :global(svg) { color: var(--accent-primary); opacity: 1; }
+        .item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+        .item-title { 
+          font-size: 13px; font-weight: 500; color: var(--text-primary); 
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          line-height: 1.4;
+        }
         
-        .item-actions { opacity: 0; transition: opacity 0.2s; position: relative; }
+        .item-actions { opacity: 0; transition: opacity 0.2s; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: linear-gradient(90deg, transparent, var(--background) 20%); padding-left: 12px; }
         .history-item:hover .item-actions { opacity: 1; }
-        .action-trigger { color: var(--text-tertiary); padding: 4px; }
-        .action-trigger:hover { color: var(--accent-primary); }
+        .action-trigger { color: var(--text-tertiary); padding: 4px; border-radius: 6px; }
+        .action-trigger:hover { color: #ef4444; background: rgba(239, 68, 68, 0.05); }
         
         .bottom-section { display: flex; flex-direction: column; gap: 12px; }
         
@@ -270,7 +280,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           cursor: pointer;
           transition: all 0.3s;
         }
-        .footer-item.collapsed { justify-content: center; padding: 12px 0; }
+        .footer-item :global(svg) { flex-shrink: 0; }
+        .footer-item.collapsed { width: 40px; height: 40px; padding: 0; justify-content: center; }
         .footer-item:hover { color: var(--accent-primary); }
 
         .user-profile {
@@ -281,7 +292,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           cursor: pointer;
           transition: all 0.3s var(--spring);
         }
-        .user-profile.collapsed { justify-content: center; padding: 12px 0; border: none; background: transparent; box-shadow: none; }
+        .user-profile :global(svg) { flex-shrink: 0; }
+        .user-profile.collapsed { width: 44px; height: 44px; padding: 0; justify-content: center; border: none; background: transparent; box-shadow: none; }
         .user-profile:hover { transform: translateY(-2px); border-color: var(--accent-primary); }
         .avatar {
           width: 32px; height: 32px;
@@ -289,6 +301,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           border-radius: 10px;
           display: flex; align-items: center; justify-content: center;
           color: white;
+          flex-shrink: 0;
         }
         .user-info { display: flex; flex-direction: column; }
         .user-name { font-size: 13px; font-weight: 700; color: var(--text-primary); }

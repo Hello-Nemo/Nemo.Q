@@ -11,15 +11,15 @@ import {
   ChevronLeft,
   ChevronRight,
   GripVertical,
-  Activity,
-  ShieldCheck,
   Clock,
   Layout,
-  Cpu,
   Monitor,
   Maximize2,
   Download,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Zap,
+  ShieldCheck
 } from 'lucide-react';
 
 import type { DataAgentUIMessage } from '@/lib/types';
@@ -41,7 +41,11 @@ const SUGGESTED_QUESTIONS = [
   "找出最近退货率最高的产品类别",
 ];
 
+import { useHistory } from '@/components/HistoryContext';
+import { luminaStorage } from '@/lib/db';
+
 export default function ChatPage() {
+  const { currentSessionId, updateSession, createSession, sessions } = useHistory();
   const [pinnedCards, setPinnedCards] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
@@ -53,13 +57,81 @@ export default function ChatPage() {
   const startWidth = useRef(0);
   const isProgrammaticScroll = useRef(false);
 
-  const { messages, sendMessage, status, stop, error } = useChat<DataAgentUIMessage>({
+  // Load initial messages from session if exists
+  const [initialMessages, setInitialMessages] = useState<DataAgentUIMessage[]>([]);
+  
+  useEffect(() => {
+    if (currentSessionId) {
+      luminaStorage.getSession(currentSessionId).then(session => {
+        if (session) {
+          setInitialMessages(session.messages);
+        } else {
+          setInitialMessages([]);
+        }
+      });
+    } else {
+      // If no session ID, create one (this handles first load)
+      const newId = createSession();
+    }
+  }, [currentSessionId, createSession]);
+
+  const { messages, sendMessage, status, stop, error, setMessages } = useChat<DataAgentUIMessage>({
+    id: currentSessionId || undefined,
+    initialMessages: initialMessages,
     transport: new DefaultChatTransport({ api: '/api/chat' }),
     experimental_throttle: 50,
+    onFinish: (message) => {
+      // Final save when a message is fully streamed
+      if (currentSessionId) {
+        // Force an update to ensure the final state is captured
+      }
+    },
     onError: (err) => {
       console.error('Chat error:', err);
     }
   });
+
+  // Effect to handle multi-session switching in useChat hook
+  useEffect(() => {
+    setMessages(initialMessages);
+  }, [initialMessages, setMessages]);
+
+  // Effect to persist messages and generate title
+  useEffect(() => {
+    if (!currentSessionId || messages.length === 0) return;
+
+    const isFirstMessage = messages.length === 1 && messages[0].role === 'user';
+    
+    const saveSession = async () => {
+      let title: string | undefined;
+
+      // If it's the first message, extract title
+      if (messages.length > 0) {
+        const firstUserMsg = messages.find(m => m.role === 'user');
+        if (firstUserMsg) {
+          const text = (firstUserMsg.parts.find(p => p.type === 'text') as any)?.text || '';
+          if (text) {
+            title = text.length > 30 ? text.substring(0, 30).trim() + '...' : text.trim();
+          }
+        }
+      }
+
+      await updateSession(currentSessionId, {
+        messages,
+        ...(title ? { title } : {})
+      });
+    };
+
+    // If it's the very first message, save immediately to sync sidebar
+    if (isFirstMessage) {
+      saveSession();
+      return;
+    }
+
+    // Otherwise, debounce saves during streaming
+    const saveTimeout = setTimeout(saveSession, 1500);
+    return () => clearTimeout(saveTimeout);
+  }, [messages, currentSessionId, updateSession]);
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
@@ -156,7 +228,7 @@ export default function ChatPage() {
       <div className="welcome-inner animate-fade-in">
         <div className="header-box">
           <div className="brand-aura">
-            <Cpu size={32} />
+            <Sparkles size={32} fill="currentColor" />
           </div>
           <div className="brand-text">
             <h1>Lumina AI</h1>
@@ -171,16 +243,6 @@ export default function ChatPage() {
           <p className="hero-subtitle">自然、灵动、深邃。让 AI 助您洞察业务核心。</p>
         </div>
 
-        <div className="status-row">
-          <div className="mini-status soft-surface">
-            <Activity size={14} className="icon-pulse" />
-            <span>核心就绪</span>
-          </div>
-          <div className="mini-status soft-surface">
-            <ShieldCheck size={14} />
-            <span>语义同步</span>
-          </div>
-        </div>
         
         <div className="templates-section">
           <div className="template-grid">
@@ -198,32 +260,34 @@ export default function ChatPage() {
         .welcome-root { display: flex; align-items: center; justify-content: center; min-height: 100%; padding: 120px 40px; position: relative; }
         .welcome-inner { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 64px; align-items: center; text-align: center; }
         
-        .header-box { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+        .header-box { display: flex; flex-direction: column; align-items: center; gap: 24px; }
         .brand-aura { 
-          width: 72px; height: 72px; 
-          background: white; 
+          width: 80px; height: 80px; 
+          background: linear-gradient(135deg, #6366f1, #a855f7);
           border-radius: 24px; 
           display: flex; align-items: center; justify-content: center; 
-          color: var(--accent-primary);
-          box-shadow: 0 20px 40px rgba(99, 102, 241, 0.15);
+          color: white;
+          box-shadow: 0 20px 40px rgba(99, 102, 241, 0.2);
           position: relative;
+          overflow: hidden;
+          animation: logo-float 6s ease-in-out infinite;
         }
         .brand-aura::after {
-          content: ''; position: absolute; inset: -10px;
-          background: var(--accent-flow); filter: blur(20px); opacity: 0.2; border-radius: 30px; z-index: -1;
+          content: ''; position: absolute; inset: 0;
+          background: linear-gradient(transparent, rgba(255,255,255,0.25));
         }
-        .brand-text h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.04em; }
-        .brand-text p { font-family: var(--font-mono); font-size: 10px; font-weight: 800; color: var(--text-tertiary); letter-spacing: 0.2em; margin-top: 6px; }
+        @keyframes logo-float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+        .brand-text h1 { font-size: 28px; font-weight: 900; letter-spacing: -0.04em; color: var(--text-primary); }
+        .brand-text p { font-family: var(--font-mono); font-size: 10px; font-weight: 800; color: var(--accent-primary); letter-spacing: 0.2em; margin-top: 8px; opacity: 0.8; }
 
         .hero-section { display: flex; flex-direction: column; gap: 16px; }
         .hero-title { font-size: 56px; font-weight: 800; letter-spacing: -0.05em; color: var(--text-primary); line-height: 1.1; }
         .gradient-text { background: var(--accent-flow); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .hero-subtitle { font-size: 18px; color: var(--text-secondary); max-width: 460px; margin: 0 auto; }
 
-        .status-row { display: flex; gap: 12px; }
-        .mini-status { padding: 8px 16px; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--text-secondary); border-radius: 99px; }
-        .icon-pulse { color: var(--accent-primary); animation: breathe 2s infinite ease-in-out; }
-        @keyframes breathe { 0%, 100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.1); } }
 
         .templates-section { width: 100%; }
         .template-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
