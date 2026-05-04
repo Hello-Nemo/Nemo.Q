@@ -32,6 +32,9 @@ const notoMain = Noto_Sans_SC({
 export const metadata: Metadata = {
   title: 'Nemo.Q | Precision In, Truth Out.',
   description: 'Surgical-Grade Data Intelligence Engine powered by Vercel AI SDK',
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({
