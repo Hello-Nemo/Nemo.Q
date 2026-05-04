@@ -52,11 +52,13 @@ Insight Generator
 - Next.js + React 前端工作台；
 - Vercel AI SDK Agent 调用链路；
 - PostgreSQL 数据源连接；
-- `getSchema`、`getTableSamples`、`searchTables`、`executeQuery`、`askClarification` 工具；
+- `getSchema`、`getTableSamples`、`searchTables`、`executeQuery`、`askClarification`、`semanticQuery` 工具；
+- **工业级 SQL 编译器**：支持 Dijkstra 最优路径发现与 Multi-pass (CTE) 聚合缝合，彻底解决 Chasm Trap 和 Fan-out 陷阱；
 - SQL Audit 前端展示；
 - Clarification Flow 前端交互；
 - Insight Canvas 图表画布；
-- 初版 `semantic-layer.json`；
+- 结构化 `semantic-layer.json` (支持 Fact/Dimension 实体类型)；
 - 初版 `scripts/run-eval.ts` 评测脚本。
+
 
 后续演进重点是将这些能力从 Demo 链路升级为可验证、可治理、可评测的智能问数产品内核。

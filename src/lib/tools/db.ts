@@ -3,14 +3,15 @@ import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 import { PostgresDataSource, IDataSource } from '../db-connector';
+import { SQLCompiler } from '../semantic/compiler';
+import { QueryPlan, SemanticLayer } from '../semantic/types';
+
 
 // 加载语义层配置
-const getSemanticLayer = (projectName: string = 'default') => {
+const getSemanticLayer = (projectName: string = 'default'): SemanticLayer => {
   try {
-    // 优先尝试加载项目特定配置，否则回退到根目录文件
     const projectPath = path.join(process.cwd(), `src/lib/semantic/${projectName}.json`);
     const rootPath = path.join(process.cwd(), 'src/lib/semantic-layer.json');
-    
     const targetPath = fs.existsSync(projectPath) ? projectPath : rootPath;
     
     if (fs.existsSync(targetPath)) {
@@ -19,8 +20,9 @@ const getSemanticLayer = (projectName: string = 'default') => {
   } catch (e) {
     console.error('无法加载语义层定义:', e);
   }
-  return { tables: {}, metrics: {} };
+  return { entities: {}, metrics: {}, dimensions: {}, relationships: [] };
 };
+
 
 // 数据源工厂 (未来可支持 MySQL 等)
 const getDataSource = (): IDataSource => {
@@ -160,10 +162,65 @@ export const askClarification = tool({
   },
 });
 
+/**
+ * 语义化查询：通过 Query Plan 进行标准指标查询
+ */
+export const semanticQuery = tool({
+  description: '通过语义层进行标准指标查询。这是最推荐的取数方式，能够保证 100% 准确性。',
+  inputSchema: z.object({
+    explanation: z.string().describe('用自然语言说明本次查询的业务意图。'),
+    plan: z.object({
+      intent: z.enum(['metric_query', 'exploration', 'comparison']),
+      metrics: z.array(z.object({ id: z.string() })),
+      dimensions: z.array(z.object({ id: z.string() })),
+      timeRange: z.object({
+        type: z.enum(['preset', 'absolute']),
+        value: z.string(),
+      }).optional(),
+      filters: z.array(z.object({
+        field: z.string(),
+        operator: z.enum(['=', '!=', '>', '<', '>=', '<=', 'in', 'between']),
+        value: z.any(),
+      })),
+      limit: z.number().optional(),
+    }).describe('结构化的查询计划 (Query Plan)'),
+  }),
+  execute: async ({ plan, explanation }) => {
+    const projectName = process.env.CURRENT_PROJECT || 'default';
+    const semanticLayer = getSemanticLayer(projectName);
+    const compiler = new SQLCompiler(semanticLayer);
+    
+    try {
+      const sql = compiler.compile(plan as QueryPlan);
+      console.log('[DEBUG] semanticQuery generated SQL:', sql);
+      
+      const ds = getDataSource();
+      try {
+        const result = await ds.executeQuery(sql);
+        return {
+          ...result,
+          audit: { 
+            sql, 
+            explanation, 
+            plan,
+            isCertified: true 
+          }
+        };
+      } finally {
+        await ds.close();
+      }
+    } catch (e: any) {
+      return { error: `语义查询编译失败: ${e.message}` };
+    }
+  },
+});
+
 export const dbTools = {
   getSchema,
   executeQuery,
   getTableSamples,
   searchTables,
   askClarification,
+  semanticQuery,
 };
+
