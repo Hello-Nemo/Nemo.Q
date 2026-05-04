@@ -15,6 +15,7 @@ export const chartTools = {
       data: z.array(z.record(z.string(), z.any())).describe('图表数据数组，例如 [{name: "Jan", value: 100}]'),
       xAxisKey: z.string().describe('X 轴对应的键名（饼图通常不需要）'),
       yAxisKey: z.string().describe('Y 轴对应的键名'),
+      audit: z.any().optional().describe('可选的审计信息，包含 SQL 和业务假设'),
     }),
     execute: async (args) => {
       // 这是一个展示类工具，服务端不需要逻辑，直接返回参数供前端渲染

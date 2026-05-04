@@ -25,6 +25,7 @@ import {
 import type { DataAgentUIMessage } from '@/lib/types';
 import WorkbenchLayout from '@/components/WorkbenchLayout';
 import InputArea from '@/components/InputArea';
+import ReasoningBlock from '@/components/ReasoningBlock';
 
 const DataTable = dynamic(() => import('@/components/DataTable'), { ssr: false });
 const SqlAudit = dynamic(() => import('@/components/SqlAudit'), { ssr: false });
@@ -34,10 +35,10 @@ const InsightCanvas = dynamic(() => import('@/components/InsightCanvas'), { ssr:
 const ThinkingIndicator = dynamic(() => import('@/components/ThinkingIndicator'), { ssr: false });
 
 const SUGGESTED_QUESTIONS = [
+  "分析各国家的销售额和客单价",
+  "统计不同年龄段的用户数分布",
   "分析核心忠诚客户的表现",
-  "为什么这个月客单价变低了？",
-  "目前有哪些库存告急的产品？",
-  "分析高价值订单的分布情况",
+  "找出最近退货率最高的产品类别",
 ];
 
 export default function ChatPage() {
@@ -50,37 +51,65 @@ export default function ChatPage() {
   const isResizing = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
+  const isProgrammaticScroll = useRef(false);
 
-  const { messages, sendMessage, status, stop } = useChat<DataAgentUIMessage>({
+  const { messages, sendMessage, status, stop, error } = useChat<DataAgentUIMessage>({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
     experimental_throttle: 50,
+    onError: (err) => {
+      console.error('Chat error:', err);
+    }
   });
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
-  useEffect(() => {
-    const scrollContainer = scrollRef.current;
-    if (isAutoScrollEnabled && scrollContainer) {
-      scrollContainer.scrollTo({
-        top: scrollContainer.scrollHeight,
-        behavior: isLoading ? 'auto' : 'smooth'
-      });
+  // Expert Fix: Safety wrapper to prevent stream collisions
+  const safeSendMessage = useCallback((params: { text: string }) => {
+    if (isLoading) {
+      stop();
     }
-  }, [messages.length, isAutoScrollEnabled, isLoading]); // Use messages.length for a stable dependency size
+    // Small delay to ensure stop signal is processed if needed by transport
+    // but usually calling it sequentially is enough for the hook state.
+    sendMessage(params);
+  }, [isLoading, stop, sendMessage]);
+
 
   const handleScroll = useCallback(() => {
+    // If we just programmatically scrolled, ignore this event to avoid state loops
+    if (isProgrammaticScroll.current) {
+      isProgrammaticScroll.current = false;
+      return;
+    }
+
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     
-    // Use a small buffer (50px) to determine if we are at bottom
+    // Check if we are close enough to the bottom to enable auto-scroll
+    // Using a smaller threshold (50px) for better accuracy
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
     
-    // Only update state if it actually changed to prevent render loops
-    setIsAutoScrollEnabled(prev => {
-      if (prev !== isAtBottom) return isAtBottom;
-      return prev;
-    });
+    setIsAutoScrollEnabled(prev => prev !== isAtBottom ? isAtBottom : prev);
   }, []);
+
+  // Effect for auto-scrolling on ANY message update (including streaming text)
+  useEffect(() => {
+    if (!isAutoScrollEnabled || !scrollRef.current) return;
+    
+    const container = scrollRef.current;
+    
+    // During streaming, we force auto scroll to keep pace
+    if (status === 'streaming' || status === 'submitted') {
+      isProgrammaticScroll.current = true;
+      container.scrollTop = container.scrollHeight;
+    } else {
+      // Smooth scroll for final updates
+      isProgrammaticScroll.current = true;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [messages, isAutoScrollEnabled, status]);
 
   const startResize = useCallback((e: React.MouseEvent) => {
     isResizing.current = true;
@@ -119,7 +148,7 @@ export default function ChatPage() {
 
   const handleAction = (rowData: any) => {
     const summary = Object.entries(rowData).map(([k, v]) => `${k}: ${v}`).join(', ');
-    sendMessage({ text: `针对这条记录深度分析其对业务的影响：${summary}` });
+    safeSendMessage({ text: `针对这条记录深度分析其对业务的影响：${summary}` });
   };
 
   const renderWelcome = () => (
@@ -156,7 +185,7 @@ export default function ChatPage() {
         <div className="templates-section">
           <div className="template-grid">
             {SUGGESTED_QUESTIONS.map((q) => (
-              <button key={q} onClick={() => sendMessage({ text: q })} className="template-pill soft-surface">
+              <button key={q} onClick={() => safeSendMessage({ text: q })} className="template-pill soft-surface">
                 <span className="q-text">{q}</span>
                 <div className="q-hover-aura" />
               </button>
@@ -232,38 +261,37 @@ export default function ChatPage() {
         const isActive = isLoading && isLastPart;
         
         return (
-          <div key={`part-reasoning-${i}`} className={`part-unit reasoning-block ${isActive ? 'is-active' : 'is-complete'} animate-fade-in`}>
-            <div className="reasoning-inner soft-surface">
-              <div className="reasoning-header">
-                <div className={`orb ${isActive ? 'pulsing' : ''}`} />
-                <span>思维脉络</span>
-              </div>
-              <div className="reasoning-body prose-lumina">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
-                {isActive && <span className="reasoning-cursor" />}
-              </div>
-            </div>
+          <div key={`part-reasoning-${i}`} className="part-unit reasoning-container-wrapper animate-fade-in">
+            <ReasoningBlock 
+              text={part.text} 
+              isActive={isActive} 
+            />
           </div>
         );
       }
 
-      case 'tool-askClarification':
+      case 'tool-askClarification': {
+        const toolPart = part as any;
+        const args = toolPart.args || toolPart.input || toolPart.invocation?.args || {};
+        
         return (
           <div key={`part-clarification-${i}`} className="part-unit flow-part animate-fade-in">
             <ClarificationFlow
-              question={(part as any).args?.question || ''}
-              options={(part as any).args?.options || []}
-              context={(part as any).args?.context || ''}
-              defaultAssumption={(part as any).args?.defaultAssumption || '无'}
-              onSelect={(val) => sendMessage({ text: `选择：${val}` })}
-              onSkip={() => sendMessage({ text: '跳过确认' })}
+              question={args.question || ''}
+              options={args.options || []}
+              context={args.context || ''}
+              defaultAssumption={args.defaultAssumption || '无'}
+              onSelect={(val) => safeSendMessage({ text: `选择：${val}` })}
+              onSkip={() => safeSendMessage({ text: '跳过确认' })}
             />
           </div>
         );
+      }
 
       case 'tool-executeQuery': {
         const toolPart = part as any;
-        // 饱和式探测：加入日志中明确出现的 input 字段
+        if (!toolPart) return null;
+
         const auditData = (toolPart.output as any)?.audit || {};
         const args = toolPart.input || 
                      toolPart.args || 
@@ -277,6 +305,8 @@ export default function ChatPage() {
         const finalExplanation = auditData.explanation || args.explanation;
         const finalAssumptions = auditData.assumptions || args.assumptions;
 
+        const state = toolPart.state || 'unknown';
+
         return (
           <div key={`part-query-${i}`} className="part-unit tool-part animate-fade-in">
             <div className="component-container">
@@ -284,11 +314,11 @@ export default function ChatPage() {
                 sql={finalSql} 
                 explanation={finalExplanation} 
                 assumptions={finalAssumptions} 
-                isStreaming={toolPart.state === 'call' && !toolPart.output} 
+                isStreaming={state === 'call' && !toolPart.output} 
                 debugRaw={toolPart}
               />
               
-              <div className={`result-drawer ${toolPart.state === 'output-available' || toolPart.state === 'output-error' ? 'is-ready' : 'is-loading'}`}>
+              <div className={`result-drawer ${state === 'output-available' || state === 'output-error' ? 'is-ready' : 'is-loading'}`}>
                 {(toolPart.output as any)?.error || toolPart.errorText ? (
                   <div className="error-block soft-surface">
                     <AlertCircle size={18} />
@@ -297,7 +327,7 @@ export default function ChatPage() {
                       <p className="error-text">{(toolPart.output as any)?.error || toolPart.errorText}</p>
                     </div>
                   </div>
-                ) : toolPart.state === 'output-available' ? (
+                ) : state === 'output-available' ? (
                   <div className="table-block">
                     <DataTable
                       rows={(toolPart.output as any)?.rows || []}
@@ -318,8 +348,12 @@ export default function ChatPage() {
 
       case 'tool-render_chart': {
         const toolPart = part as any;
+        if (!toolPart) return null;
+
         const output = toolPart.output as any;
-        if (toolPart.state !== 'output-available') return <div key={`part-chart-sk-${i}`} className="skeleton-card soft-surface" />;
+        const state = toolPart.state || 'unknown';
+
+        if (state !== 'output-available') return <div key={`part-chart-sk-${i}`} className="skeleton-card soft-surface" />;
         return (
           <div key={`part-chart-${i}`} className="part-unit chart-part animate-fade-in">
             <div className="component-container">
@@ -330,6 +364,7 @@ export default function ChatPage() {
                 description={output?.description}
                 data={output?.data || []}
                 chartType={output?.type === 'bar' ? 'bar' : 'area'}
+                audit={output?.audit}
               />
               <div className="action-overlay">
                 <button className="action-pill soft-surface" onClick={() => handlePin({
@@ -382,9 +417,15 @@ export default function ChatPage() {
                         <span className="timestamp">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                       </div>
                       <div className="turn-body">
-                        {(message.parts as DataAgentUIMessage['parts']).map((part, i, parts) =>
-                          renderPart(part, i, parts)
-                        )}
+                        {(() => {
+                          const parts = message.parts as DataAgentUIMessage['parts'];
+                          const clarificationIdx = parts.findIndex(p => p.type === 'tool-askClarification');
+                          const renderedParts = clarificationIdx !== -1 ? parts.slice(0, clarificationIdx + 1) : parts;
+                          
+                          return renderedParts.map((part, i, all) =>
+                            renderPart(part, i, all)
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -392,21 +433,59 @@ export default function ChatPage() {
               ))}
 
               {/* Thinking Indicator integrated into chat flow */}
-              {isLoading && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant' || messages[messages.length - 1].parts.length === 0) && (
-                <div key="thinking-indicator-turn" className="message-turn assistant loading-turn">
-                  <div className="assistant-turn-content">
-                    <div className="turn-meta">
-                      <div className="agent-orb pulsing" />
-                      <span className="agent-label">LUMINA_FLOW</span>
-                      <div className="meta-sep" />
-                      <span className="timestamp">洞察中...</span>
+              {(() => {
+                if (!isLoading) return null;
+                const lastMessage = messages[messages.length - 1];
+                if (!lastMessage || lastMessage.role !== 'assistant' || lastMessage.parts.length === 0) {
+                  return (
+                    <div key="thinking-indicator-turn" className="message-turn assistant loading-turn">
+                      <div className="assistant-turn-content">
+                        <div className="turn-meta">
+                          <div className="agent-orb pulsing" />
+                          <span className="agent-label">LUMINA_FLOW</span>
+                          <div className="meta-sep" />
+                          <span className="timestamp">系统就绪</span>
+                        </div>
+                        <div className="turn-body">
+                          <ThinkingIndicator />
+                        </div>
+                      </div>
                     </div>
-                    <div className="turn-body">
-                      <ThinkingIndicator />
+                  );
+                }
+                
+                // If assistant turn has started, check if it already contains active indicators
+                const hasReasoning = lastMessage.parts.some(p => p.type === 'reasoning');
+                const hasClarification = lastMessage.parts.some(p => p.type === 'tool-askClarification');
+                
+                if (hasReasoning || hasClarification) return null;
+                
+                // Fallback indicator for intermediate states (e.g. between tool calls)
+                return (
+                  <div key="thinking-indicator-turn" className="message-turn assistant loading-turn">
+                    <div className="assistant-turn-content">
+                      <div className="turn-body">
+                        <ThinkingIndicator />
+                      </div>
                     </div>
                   </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {error && (
+            <div className="error-boundary animate-fade-in">
+              <div className="error-inner soft-surface">
+                <AlertCircle size={20} className="error-icon" />
+                <div className="error-content">
+                  <span className="error-title">连接中断或执行异常</span>
+                  <p className="error-desc">{error.message || '由于网络波动或模型响应超时，输出已停止。'}</p>
                 </div>
-              )}
+                <button className="retry-btn soft-surface" onClick={() => safeSendMessage({ text: '重试上一次操作' })}>
+                  重试
+                </button>
+              </div>
             </div>
           )}
           
@@ -420,8 +499,8 @@ export default function ChatPage() {
 
         <div className="input-zone">
           <InputArea
-            isLoading={isLoading}
-            onSend={(text) => sendMessage({ text })}
+            isLoading={isLoading || messages[messages.length - 1]?.parts.some(p => p.type === 'tool-askClarification')}
+            onSend={(text) => safeSendMessage({ text })}
             onStop={() => stop()}
           />
         </div>
@@ -501,14 +580,7 @@ export default function ChatPage() {
         
         .turn-body { display: flex; flex-direction: column; }
 
-        .reasoning-block { margin: 12px 0; }
-        .reasoning-inner { padding: 24px; border-radius: 24px; }
-        .reasoning-header { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 16px; }
-        .orb { width: 6px; height: 6px; background: var(--accent-primary); border-radius: 50%; }
-        .orb.pulsing { animation: orb-pulse 1.5s infinite; }
-        .reasoning-body { font-size: 14px; line-height: 1.8; color: var(--text-secondary); font-style: italic; opacity: 0.8; }
-        .reasoning-cursor { display: inline-block; width: 8px; height: 8px; background: var(--accent-primary); border-radius: 50%; margin-left: 8px; animation: cursor-blink 1s infinite; }
-        @keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .reasoning-container-wrapper { margin: 8px 0; }
 
         .input-zone {
           position: sticky;
@@ -529,6 +601,15 @@ export default function ChatPage() {
         @keyframes sk-flow { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 
         .scroll-pills { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 14px 28px; border-radius: 99px; font-size: 12px; font-weight: 700; color: var(--accent-primary); z-index: 100; }
+
+        .error-boundary { max-width: 800px; margin: 40px auto; padding: 0 40px; position: relative; z-index: 100; }
+        .error-inner { padding: 24px; border-radius: 24px; border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(255, 255, 255, 0.8); display: flex; align-items: center; gap: 20px; }
+        .error-icon { color: #ef4444; }
+        .error-content { flex: 1; }
+        .error-title { display: block; font-size: 14px; font-weight: 800; color: #111827; margin-bottom: 4px; }
+        .error-desc { font-size: 13px; color: #6b7280; margin: 0; }
+        .retry-btn { padding: 10px 24px; font-size: 12px; font-weight: 800; color: var(--accent-primary); border-radius: 12px; }
+        .retry-btn:hover { background: var(--accent-primary); color: white; border-color: var(--accent-primary); }
 
         .canvas-col { flex-shrink: 0; height: 100%; display: flex; background: rgba(255, 255, 255, 0.4); backdrop-filter: blur(20px); border-left: 1px solid var(--surface-border); transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1); position: relative; }
         .canvas-col.collapsed { width: 80px; background: transparent; backdrop-filter: none; border: none; }

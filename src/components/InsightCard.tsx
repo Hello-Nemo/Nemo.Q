@@ -1,7 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Pin, Maximize2, X, TrendingUp, TrendingDown, AlertCircle, ShieldCheck, Info } from 'lucide-react';
+import { Pin, X, TrendingUp, TrendingDown, ShieldCheck, Info, Download, Layers, Code, Zap, BarChart2, AreaChart as AreaIcon } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github.css';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -13,7 +16,6 @@ import {
   BarChart,
   Bar,
   Cell,
-  Legend,
 } from 'recharts';
 
 interface InsightCardProps {
@@ -27,7 +29,7 @@ interface InsightCardProps {
   chartType?: 'area' | 'bar';
   isAnomaly?: boolean;
   compact?: boolean; 
-  isCertified?: boolean; // 是否为认证语义查询
+  isCertified?: boolean; 
   audit?: {
     sql: string;
     explanation: string;
@@ -36,6 +38,7 @@ interface InsightCardProps {
 }
 
 export default function InsightCard({
+  id,
   type,
   title,
   description,
@@ -50,231 +53,285 @@ export default function InsightCard({
 }: InsightCardProps) {
   const [isMounted, setIsMounted] = React.useState(false);
   const [showAudit, setShowAudit] = React.useState(false);
-  const chartHeight = compact ? 120 : 180;
+  const [isPinned, setIsPinned] = React.useState(false);
+  const chartHeight = compact ? 120 : 200;
 
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // 自动检测数据结构
-  const hasComparison = data.length > 0 && Object.keys(data[0]).some(k => k.endsWith('_prev'));
-  
-  // 提取动态数据键
-  const mainMetricKey = data.length > 0 ? Object.keys(data[0]).find(k => !k.endsWith('_prev') && !k.endsWith('_growth') && k !== 'name' && k !== 'id') || 'value' : 'value';
-  const prevMetricKey = `${mainMetricKey}_prev`;
-  const growthKey = `${mainMetricKey}_growth`;
+  if (!isMounted) return <div style={{ height: 240 }} className="card-skeleton" />;
 
-  // 计算自动趋势 (如果 prop 未提供)
-  const autoTrend = React.useMemo(() => {
-    if (trend) return trend;
-    if (!hasComparison || data.length === 0) return null;
-    const lastPoint = data[data.length - 1];
-    const growth = lastPoint[growthKey];
-    if (growth === undefined) return null;
-    
-    return {
-      value: `${(growth * 100).toFixed(1)}%`,
-      isUp: growth > 0
-    };
-  }, [trend, hasComparison, data, growthKey]);
+  const hasSemanticAssets = (audit?.plan?.metrics && audit.plan.metrics.length > 0) || 
+                             (audit?.plan?.lineage?.metrics && audit.plan.lineage.metrics.length > 0) ||
+                             (audit?.plan?.dimensions && audit.plan.dimensions.length > 0);
+                             
+  const hasMetrics = audit?.plan?.metrics?.length > 0 || audit?.plan?.lineage?.metrics?.length > 0;
+  const hasDimensions = audit?.plan?.dimensions?.length > 0 || audit?.plan?.lineage?.dimensions?.length > 0;
+  
+  const effectiveIsCertified = isCertified || 
+    audit?.plan?.certificationLevel === 'certified_plan' || 
+    audit?.plan?.certificationLevel === 'certified' ||
+    ((hasMetrics || hasDimensions) && !audit?.plan?.isRawSql);
+
+  // 改进的数据 Key 识别逻辑
+  const detectKeys = () => {
+    if (data.length === 0) return { xKey: 'name', yKey: 'value' };
+    const keys = Object.keys(data[0]);
+    const xKey = keys.find(k => ['name', 'date', 'category', 'label', 'segment', 'username'].includes(k.toLowerCase())) || keys[0];
+    const yKey = keys.find(k => k !== xKey && !k.includes('growth') && typeof data[0][k] === 'number') 
+                || keys.find(k => k !== xKey && !k.includes('growth')) 
+                || 'value';
+    return { xKey, yKey };
+  };
+
+  const { xKey, yKey } = detectKeys();
+  const growthKey = data.length > 0 ? Object.keys(data[0]).find(k => k.includes('growth')) : null;
 
   return (
-    <div className={`insight-card soft-surface ${isAnomaly ? 'anomaly' : ''} ${compact ? 'compact' : ''} ${isCertified ? 'certified' : ''}`}>
-      {/* Header */}
+    <div className={`insight-card ${type} ${compact ? 'compact' : ''} ${isAnomaly ? 'anomaly' : ''} animate-slide-up`}>
       <div className="card-header">
-        <div className="header-meta">
-          <div className="title-row">
-            <h3 className="card-title">{title}</h3>
-            {isCertified && (
-              <div className="certified-badge" title="语义认证查询">
-                <ShieldCheck size={12} />
-                <span>已认证</span>
+        <div className="header-main">
+          <div className="title-group">
+            <div className="title-icon">
+              {type === 'chart' && (chartType === 'area' ? <AreaIcon size={14} /> : <BarChart2 size={14} />)}
+              {type === 'kpi' && <TrendingUp size={14} />}
+            </div>
+            <h3>{title}</h3>
+            {effectiveIsCertified && (
+              <div className="certified-badge-pill" onClick={() => setShowAudit(true)}>
+                <ShieldCheck size={10} />
+                <span>语义认证</span>
               </div>
             )}
           </div>
-          {description && <p className="card-desc">{description}</p>}
+          {description && <p className="description">{description}</p>}
         </div>
-        <div className="card-actions">
-          <button className="icon-btn" onClick={() => setShowAudit(!showAudit)} title="查看逻辑详情">
-            <Info size={14} />
-          </button>
-          <button className="icon-btn" title="固定至画布"><Pin size={14} /></button>
-          {!compact && <button className="icon-btn" title="全屏查看"><Maximize2 size={14} /></button>}
+        <div className="header-actions">
+          {audit && (
+            <button className="audit-trigger-btn" onClick={() => setShowAudit(true)}>
+              审计
+            </button>
+          )}
+          <div className={`pin-action ${isPinned ? 'active' : ''}`} onClick={() => setIsPinned(!isPinned)}>
+            <Pin size={14} />
+          </div>
         </div>
       </div>
 
-      {/* KPI Display */}
-      {type === 'kpi' && (
-        <div className="kpi-display">
-          <div className="kpi-main">
-            <span className="kpi-value">{value}</span>
-            {autoTrend && (
-              <div className={`kpi-trend ${autoTrend.isUp ? 'up' : 'down'}`}>
-                {autoTrend.isUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                <span>{autoTrend.value}</span>
+      <div className="card-content">
+        {type === 'kpi' && (
+          <div className="kpi-hero">
+            <div className="kpi-value-main">{value}</div>
+            {trend && (
+              <div className={`kpi-trend-tag ${trend.isUp ? 'up' : 'down'}`}>
+                {trend.isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                <span>{trend.value}</span>
               </div>
             )}
           </div>
-          {data && data.length > 0 && isMounted && (
-            <div className="mini-spark">
-              <ResponsiveContainer width="100%" height={40}>
-                <AreaChart data={data}>
-                  <Area
-                    type="monotone"
-                    dataKey={mainMetricKey}
-                    stroke={autoTrend?.isUp ? '#10b981' : '#ef4444'}
-                    fill={autoTrend?.isUp ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'}
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      )}
+        )}
 
-      {/* Main Charts */}
-      {type === 'chart' && (
-        <div className="chart-container" style={{ height: chartHeight }}>
-          {isMounted ? (
+        {type === 'chart' && (
+          <div className="chart-wrapper" style={{ height: chartHeight }}>
             <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'bar' ? (
-                <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} />
-                  <RechartsTooltip
-                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                    contentStyle={{ 
-                      background: 'rgba(255,255,255,0.9)', 
-                      backdropFilter: 'blur(10px)',
-                      border: 'none', 
-                      borderRadius: '16px', 
-                      boxShadow: 'var(--shadow-soft)' 
-                    }}
-                  />
-                  {hasComparison && <Legend verticalAlign="top" align="right" iconType="circle" height={30} wrapperStyle={{ fontSize: '11px' }} />}
-                  
-                  <Bar name="本期" dataKey={mainMetricKey} radius={[6, 6, 0, 0]} barSize={hasComparison ? 12 : 24} fill="var(--accent-primary)" />
-                  {hasComparison && (
-                    <Bar name="上期" dataKey={prevMetricKey} radius={[6, 6, 0, 0]} barSize={12} fill="var(--text-quaternary)" fillOpacity={0.3} />
-                  )}
-                </BarChart>
-              ) : (
+              {chartType === 'area' ? (
                 <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
-                    <linearGradient id={`mainG-${title}`} x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id={`grad-${id}`} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.2} />
                       <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(0,0,0,0.03)" />
+                  <XAxis
+                    dataKey={xKey}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: 'var(--text-tertiary)', fontWeight: 500 }}
+                    dy={10}
+                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} />
                   <RechartsTooltip
-                    contentStyle={{ 
-                      background: 'rgba(255,255,255,0.9)', 
-                      backdropFilter: 'blur(10px)',
-                      border: 'none', 
-                      borderRadius: '16px', 
-                      boxShadow: 'var(--shadow-soft)' 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="custom-tooltip">
+                            <p className="label">{`${payload[0].payload[xKey]}`}</p>
+                            <p className="value">{`${payload[0].value.toLocaleString()}`}</p>
+                          </div>
+                        );
+                      }
+                      return null;
                     }}
                   />
-                  {hasComparison && <Legend verticalAlign="top" align="right" iconType="plainline" height={30} wrapperStyle={{ fontSize: '11px' }} />}
-                  
-                  {/* 历史周期背景线 */}
-                  {hasComparison && (
-                    <Area 
-                      name="上期"
-                      type="monotone" 
-                      dataKey={prevMetricKey} 
-                      stroke="var(--text-quaternary)" 
-                      fill="transparent"
-                      strokeWidth={2} 
-                      strokeDasharray="5 5"
-                      dot={false}
-                    />
-                  )}
-                  
-                  {/* 当前周期主线 */}
-                  <Area 
-                    name="本期"
-                    type="monotone" 
-                    dataKey={mainMetricKey} 
-                    stroke="var(--accent-primary)" 
-                    fill={`url(#mainG-${title})`} 
-                    strokeWidth={3} 
-                    dot={{ r: 4, fill: '#FFF', stroke: 'var(--accent-primary)', strokeWidth: 2 }}
-                    activeDot={{ r: 6, strokeWidth: 0 }}
+                  <Area
+                    type="monotone"
+                    dataKey={yKey}
+                    stroke="var(--accent-primary)"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill={`url(#grad-${id})`}
+                    animationDuration={1500}
                   />
                 </AreaChart>
+              ) : (
+                <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} barSize={32}>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(0,0,0,0.03)" />
+                  <XAxis
+                    dataKey={xKey}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: 'var(--text-tertiary)', fontWeight: 500 }}
+                    dy={10}
+                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'rgba(99, 102, 241, 0.04)' }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="custom-tooltip">
+                            <p className="label">{`${payload[0].payload[xKey]}`}</p>
+                            <p className="value">{`${payload[0].value.toLocaleString()}`}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey={yKey} radius={[6, 6, 0, 0]} animationDuration={1200}>
+                    {data.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={index === data.length - 1 ? 'var(--accent-primary)' : 'rgba(99, 102, 241, 0.4)'} 
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
               )}
             </ResponsiveContainer>
-          ) : (
-            <div className="chart-skeleton" />
-          )}
-        </div>
-      )}
-
-      {/* Data List (Table) */}
-      {type === 'table' && (
-        <div className="data-list">
-          {data.slice(0, compact ? 3 : 5).map((row, i) => (
-            <div key={i} className="list-item">
-              <div className="item-info">
-                <span className="item-name">{row.name || row.id || Object.values(row)[0]}</span>
-                {row[growthKey] !== undefined && (
-                  <span className={`item-growth ${row[growthKey] > 0 ? 'up' : 'down'}`}>
-                    {row[growthKey] > 0 ? '+' : ''}{(row[growthKey] * 100).toFixed(1)}%
-                  </span>
-                )}
-              </div>
-              <span className="item-value">{row[mainMetricKey]}</span>
-              <div className="item-track">
-                <div className="item-fill" style={{ width: `${Math.min(100, (Number(row[mainMetricKey]) / 1000) * 100)}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Audit Panel Overlay */}
-      {showAudit && audit && (
-        <div className="audit-overlay">
-          <div className="audit-content soft-surface">
-            <div className="audit-header">
-              <ShieldCheck size={16} className="certified-icon" />
-              <h4>语义查询审计</h4>
-              <button className="close-btn" onClick={() => setShowAudit(false)}><X size={16} /></button>
-            </div>
-            <div className="audit-body">
-              <div className="audit-section">
-                <label>业务逻辑说明</label>
-                <p>{audit.explanation}</p>
-              </div>
-              <div className="audit-section">
-                <label>生成 SQL</label>
-                <pre><code>{audit.sql}</code></pre>
-              </div>
-              {audit.plan && (
-                <div className="audit-section">
-                  <label>Query Plan (IR)</label>
-                  <pre><code>{JSON.stringify(audit.plan, null, 2)}</code></pre>
-                </div>
-              )}
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Anomaly Style */}
-      {type === 'anomaly' && (
-        <div className="anomaly-box">
-          <div className="anomaly-aura" />
-          <div className="anomaly-content">
-            <AlertCircle size={20} className="anomaly-icon" />
-            <div className="anomaly-text">
-              <p>{description}</p>
-              <button className="action-link">查看深度解析 →</button>
+        {type === 'table' && (
+          <div className="data-table-minimal">
+            {data.slice(0, compact ? 3 : 5).map((row, i) => (
+              <div key={i} className="table-row">
+                <div className="row-info">
+                  <span className="name">{row[xKey]}</span>
+                  {growthKey && row[growthKey] !== undefined && (
+                    <span className={`growth ${row[growthKey] > 0 ? 'up' : 'down'}`}>
+                      {row[growthKey] > 0 ? '↑' : '↓'} {(Math.abs(row[growthKey]) * 100).toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+                <div className="row-value-group">
+                  <span className="val">{row[yKey]?.toLocaleString()}</span>
+                  <div className="progress-bg">
+                    <div className="progress-fill" style={{ width: `${Math.min(100, (Number(row[yKey]) / (Math.max(...data.map(d => d[yKey])) || 1)) * 100)}%` }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Audit Cockpit Overlay */}
+      {showAudit && audit && (
+        <div className={`audit-overlay-dimmed ${effectiveIsCertified ? 'is-certified' : ''}`} onClick={() => setShowAudit(false)}>
+          <div className="audit-cockpit-panel animate-scale-up" onClick={e => e.stopPropagation()}>
+            <div className="panel-header">
+              <div className="header-identity">
+                <div className={`protocol-icon ${effectiveIsCertified ? 'certified' : 'raw'}`}>
+                  {effectiveIsCertified ? <ShieldCheck size={14} /> : <Info size={14} />}
+                </div>
+                <div className="identity-text">
+                  <h4>{effectiveIsCertified ? '语义认证审计' : '探索性逻辑审计'}</h4>
+                  <span className="id-sub">{effectiveIsCertified ? 'V1.2 / 已认证计划' : '逻辑链路追踪'}</span>
+                </div>
+              </div>
+              <button className="panel-close" onClick={() => setShowAudit(false)}><X size={16} /></button>
+            </div>
+            
+            <div className="panel-body">
+              <div className="cockpit-grid">
+                {/* 只有认证审计才显示语义血缘 */}
+                {effectiveIsCertified && (
+                  <div className="grid-card full">
+                    <div className="card-label">
+                      <Layers size={12} />
+                      <span>语义资产血缘 (SEMANTIC_LINEAGE)</span>
+                    </div>
+                    <div className="lineage-content">
+                      <div className="lineage-item">
+                        <span className="type">核心指标</span>
+                        <div className="badges">
+                          {(audit.plan?.metrics || audit.plan?.lineage?.metrics || ['未明确']).map((m: any, i: number) => (
+                            <span key={i} className="pill metric">{typeof m === 'string' ? m : (m.id || m.name)}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="lineage-item">
+                        <span className="type">分析维度</span>
+                        <div className="badges">
+                          {(audit.plan?.dimensions || audit.plan?.lineage?.dimensions || ['全局聚合']).map((d: any, i: number) => (
+                            <span key={i} className="pill dimension">{typeof d === 'string' ? d : (d.id || d.name)}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 逻辑说明 */}
+                <div className="grid-card">
+                  <div className="card-label">
+                    <Info size={12} />
+                    <span>业务逻辑解析 (LOGIC_DECODING)</span>
+                  </div>
+                  <p className="logic-text">{audit.explanation}</p>
+                </div>
+
+                {/* 核心假设 */}
+                <div className="grid-card">
+                  <div className="card-label">
+                    <Zap size={12} />
+                    <span>前置业务假设 (ASSUMPTIONS)</span>
+                  </div>
+                  <div className="assumption-list">
+                    {audit.plan?.assumptions && audit.plan.assumptions.length > 0 ? (
+                      audit.plan.assumptions.map((a: string, i: number) => (
+                        <div key={i} className="item">
+                          <span className="dot" />
+                          <span>{a}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="empty-msg">遵循标准业务口径，无特殊假设。</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* SQL 执行层 */}
+                <div className="grid-card full code-card">
+                  <div className="card-label-row">
+                    <div className="card-label">
+                      <Code size={12} />
+                      <span>底层执行脚本 (SQL_SOURCE)</span>
+                    </div>
+                    <button className="copy-code-btn" onClick={() => navigator.clipboard.writeText(audit.sql)}>
+                      复制
+                    </button>
+                  </div>
+                  <div className="code-render">
+                    <ReactMarkdown rehypePlugins={[rehypeHighlight]}>
+                      {`\`\`\`sql\n${audit.sql}\n\`\`\``}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -282,112 +339,178 @@ export default function InsightCard({
 
       <style jsx>{`
         .insight-card {
-          padding: 24px;
-          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-          border: 1px solid rgba(255,255,255,0.5);
-          position: relative;
-          overflow: hidden;
-        }
-        .insight-card:hover {
-          transform: translateY(-4px) scale(1.02);
-          box-shadow: var(--shadow-deep);
-        }
-        .insight-card.compact { padding: 16px; }
-        .insight-card.certified { border-color: rgba(99, 102, 241, 0.2); }
-
-        .card-header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-        .title-row { display: flex; align-items: center; gap: 8px; }
-        .card-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0; }
-        .card-desc { font-size: 12px; color: var(--text-tertiary); margin: 4px 0 0; }
-        
-        .certified-badge {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          padding: 2px 6px;
-          background: rgba(99, 102, 241, 0.1);
-          color: var(--accent-primary);
-          border-radius: 6px;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .card-actions { display: flex; gap: 8px; }
-        .icon-btn { color: var(--text-tertiary); padding: 4px; transition: all 0.3s; border-radius: 8px; }
-        .icon-btn:hover { color: var(--accent-primary); background: rgba(0,0,0,0.04); }
-
-        .kpi-display { display: flex; flex-direction: column; gap: 12px; }
-        .kpi-main { display: flex; align-items: baseline; gap: 12px; }
-        .kpi-value { font-size: 32px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
-        .kpi-trend { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
-        .kpi-trend.up { color: #10b981; background: rgba(16, 185, 129, 0.1); }
-        .kpi-trend.down { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
-
-        .chart-container { width: 100%; margin-top: 10px; }
-        
-        .data-list { display: flex; flex-direction: column; gap: 12px; }
-        .list-item { display: grid; grid-template-columns: 1fr auto; gap: 8px; position: relative; padding-bottom: 14px; }
-        .item-info { display: flex; align-items: center; gap: 8px; }
-        .item-name { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
-        .item-growth { font-size: 11px; font-weight: 700; }
-        .item-growth.up { color: #10b981; }
-        .item-growth.down { color: #ef4444; }
-        .item-value { font-size: 13px; color: var(--text-primary); font-weight: 700; }
-        .item-track { grid-column: 1 / 3; height: 6px; background: rgba(0,0,0,0.04); border-radius: 3px; overflow: hidden; }
-        .item-fill { height: 100%; background: var(--accent-flow); border-radius: 3px; opacity: 0.6; }
-
-        .audit-overlay {
-          position: absolute;
-          inset: 0;
-          background: rgba(255,255,255,0.8);
-          backdrop-filter: blur(8px);
-          z-index: 10;
-          display: flex;
-          padding: 12px;
-          animation: fadeIn 0.3s ease;
-        }
-        .audit-content {
-          flex: 1;
+          background: #FFFFFF;
+          border: 1px solid #E2E8F0;
+          border-radius: 16px;
+          padding: 20px;
           display: flex;
           flex-direction: column;
-          border: 1px solid rgba(0,0,0,0.05);
-          overflow: hidden;
+          gap: 20px;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+          position: relative;
         }
-        .audit-header {
-          padding: 12px 16px;
-          border-bottom: 1px solid rgba(0,0,0,0.05);
-          display: flex;
-          align-items: center;
-          gap: 8px;
+        .insight-card:hover {
+          border-color: var(--accent-primary);
+          box-shadow: 0 12px 24px -12px rgba(99, 102, 241, 0.12);
         }
-        .audit-header h4 { font-size: 13px; font-weight: 700; margin: 0; flex: 1; }
-        .certified-icon { color: var(--accent-primary); }
-        .close-btn { color: var(--text-tertiary); padding: 4px; }
+
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .title-group { display: flex; align-items: center; gap: 10px; }
+        .title-icon { 
+          width: 24px; height: 24px; border-radius: 6px; 
+          background: rgba(99, 102, 241, 0.04); color: var(--accent-primary);
+          display: flex; align-items: center; justify-content: center;
+        }
+        h3 { font-size: 14px; font-weight: 700; color: #1E293B; margin: 0; }
         
-        .audit-body { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
-        .audit-section label { display: block; font-size: 11px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: 6px; }
-        .audit-section p { font-size: 13px; color: var(--text-secondary); margin: 0; line-height: 1.5; }
-        .audit-section pre { 
-          background: #f8f9fa; 
-          padding: 12px; 
-          border-radius: 8px; 
-          font-size: 11px; 
-          overflow-x: auto; 
-          margin: 0;
-          border: 1px solid rgba(0,0,0,0.03);
+        .certified-badge-pill {
+          display: flex; align-items: center; gap: 4px; padding: 2px 8px;
+          background: linear-gradient(135deg, #6366F1, #8B5CF6);
+          border-radius: 99px; color: #FFF; font-size: 9px; font-weight: 700;
+          cursor: pointer;
         }
 
-        .anomaly-box { position: relative; padding: 16px; border-radius: 20px; overflow: hidden; background: rgba(239, 68, 68, 0.03); }
-        .anomaly-aura { position: absolute; inset: 0; background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%); }
-        .anomaly-content { position: relative; display: flex; gap: 12px; }
-        .anomaly-icon { color: #ef4444; flex-shrink: 0; }
-        .anomaly-text p { font-size: 13px; color: var(--text-primary); margin: 0 0 8px; line-height: 1.5; }
-        .action-link { font-size: 12px; font-weight: 700; color: #ef4444; border-bottom: 2px solid transparent; }
-        .action-link:hover { border-bottom-color: #ef4444; }
+        .description { font-size: 12px; color: #64748B; margin: 4px 0 0 0; line-height: 1.5; }
+        .header-actions { display: flex; align-items: center; gap: 8px; }
+        
+        .audit-trigger-btn {
+          font-size: 11px; font-weight: 600; color: #475569;
+          border: 1px solid #E2E8F0; padding: 4px 10px; border-radius: 8px;
+          background: #FFF; cursor: pointer; transition: all 0.2s;
+        }
+        .audit-trigger-btn:hover { 
+          border-color: var(--accent-primary); 
+          color: var(--accent-primary);
+          background: rgba(99, 102, 241, 0.02);
+        }
 
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .pin-action {
+          width: 28px; height: 28px; border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          color: #CBD5E1; cursor: pointer; transition: all 0.2s;
+          border: 1px solid transparent;
+        }
+        .pin-action:hover {
+          color: var(--accent-primary);
+          background: rgba(99, 102, 241, 0.04);
+          border-color: rgba(99, 102, 241, 0.1);
+        }
+        .pin-action.active {
+          color: var(--accent-primary);
+          background: rgba(99, 102, 241, 0.08);
+          transform: rotate(45deg);
+        }
 
-        .insight-card.anomaly { border-color: rgba(239, 68, 68, 0.2); }
+        .kpi-hero { padding: 8px 0; }
+        .kpi-value-main { font-size: 32px; font-weight: 800; color: #0F172A; letter-spacing: -0.02em; }
+        .kpi-trend-tag { 
+          display: inline-flex; align-items: center; gap: 4px; margin-top: 8px;
+          font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+        }
+        .kpi-trend-tag.up { background: #ECFDF5; color: #059669; }
+        .kpi-trend-tag.down { background: #FEF2F2; color: #DC2626; }
+
+        .custom-tooltip {
+          background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px);
+          padding: 10px 14px; border-radius: 10px;
+          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.1);
+        }
+        .custom-tooltip .label { color: #94A3B8; font-size: 10px; margin: 0; font-weight: 600; text-transform: uppercase; }
+        .custom-tooltip .value { color: #FFF; font-size: 16px; margin: 4px 0 0 0; font-weight: 800; }
+
+        .data-table-minimal { display: flex; flex-direction: column; gap: 12px; }
+        .table-row { display: flex; flex-direction: column; gap: 6px; }
+        .row-info { display: flex; justify-content: space-between; align-items: center; }
+        .row-info .name { font-size: 13px; font-weight: 600; color: #475569; }
+        .row-info .growth { font-size: 11px; font-weight: 700; }
+        .row-info .growth.up { color: #10B981; }
+        .row-info .growth.down { color: #EF4444; }
+        
+        .row-value-group { display: flex; align-items: center; gap: 12px; }
+        .row-value-group .val { font-size: 14px; font-weight: 700; color: #1E293B; min-width: 60px; text-align: right; }
+        .progress-bg { flex: 1; height: 6px; background: #F1F5F9; border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(to right, #6366F1, #8B5CF6); border-radius: 3px; }
+
+        /* Audit Overlay */
+        .audit-overlay-dimmed {
+          position: absolute; inset: 0; z-index: 100;
+          background: rgba(255, 255, 255, 0.4); backdrop-filter: blur(6px);
+          display: flex; align-items: center; justify-content: center; padding: 12px;
+          cursor: pointer;
+        }
+        .audit-cockpit-panel {
+          width: 100%; height: 100%; background: #FFF; border-radius: 12px;
+          border: 1px solid #E2E8F0; display: flex; flex-direction: column;
+          box-shadow: 0 30px 60px -12px rgba(99, 102, 241, 0.15); overflow: hidden;
+          cursor: default;
+        }
+        .panel-header {
+          padding: 10px 16px; border-bottom: 1px solid #F1F5F9; background: #FFF;
+          display: flex; justify-content: space-between; align-items: center;
+        }
+        .header-identity { display: flex; align-items: center; gap: 10px; }
+        .protocol-icon {
+          width: 24px; height: 24px; border-radius: 6px;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .protocol-icon.certified { background: #6366F1; color: #FFF; box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2); }
+        .protocol-icon.raw { background: #F1F5F9; color: #64748B; }
+        
+        .identity-text { display: flex; flex-direction: column; gap: 0; }
+        .identity-text h4 { font-size: 13px; font-weight: 800; color: #1E293B; margin: 0; line-height: 1.2; }
+        .id-sub { font-family: var(--font-mono); font-size: 8px; color: #94A3B8; font-weight: 700; letter-spacing: 0.05em; line-height: 1.2; }
+        .panel-close { color: #94A3B8; cursor: pointer; background: none; border: none; padding: 4px; border-radius: 6px; display: flex; align-items: center; }
+        .panel-close:hover { background: #F1F5F9; color: #475569; }
+        
+        .panel-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .cockpit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .grid-card { 
+          background: #F8FAFC; border: 1px solid #F1F5F9; border-radius: 10px; padding: 12px;
+          display: flex; flex-direction: column; gap: 8px;
+        }
+        .grid-card.full { grid-column: span 2; }
+        
+        .card-label { 
+          display: flex; align-items: center; gap: 6px; 
+          font-size: 10px; font-weight: 700; color: #94A3B8;
+          font-family: var(--font-mono); letter-spacing: 0.02em;
+        }
+        .card-label span { opacity: 0.8; }
+        
+        .lineage-content { display: flex; flex-direction: column; gap: 8px; }
+        .lineage-item { display: flex; align-items: center; gap: 12px; }
+        .lineage-item .type { font-size: 10px; font-weight: 800; color: #64748B; width: 60px; text-transform: uppercase; }
+        .badges { display: flex; flex-wrap: wrap; gap: 4px; }
+        .pill { padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .pill.metric { background: #EEF2FF; color: #4F46E5; border: 1px solid rgba(99, 102, 241, 0.08); }
+        .pill.dimension { background: #F5F3FF; color: #7C3AED; border: 1px solid rgba(139, 92, 246, 0.08); }
+        
+        .logic-text { font-size: 13px; color: #334155; line-height: 1.5; margin: 0; }
+        .assumption-list { display: flex; flex-direction: column; gap: 6px; }
+        .item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #475569; }
+        .dot { width: 3px; height: 3px; border-radius: 50%; background: #6366F1; opacity: 0.6; flex-shrink: 0; }
+        
+        .empty-msg { font-size: 13px; color: #334155; line-height: 1.5; margin: 0; }
+        
+        .card-label-row { display: flex; justify-content: space-between; align-items: center; }
+        .copy-code-btn { 
+          font-size: 9px; font-weight: 800; color: #6366F1; background: #FFF; 
+          border: 1px solid #E0E7FF; padding: 2px 8px; border-radius: 4px; 
+          cursor: pointer; transition: all 0.2s;
+        }
+        .copy-code-btn:hover { background: #F5F7FF; border-color: #6366F1; }
+
+        .code-render :global(pre) { 
+          margin: 0 !important; padding: 8px !important; background: #FFF !important; 
+          border: 1px solid #E2E8F0 !important; border-radius: 6px !important;
+          font-size: 11px !important; white-space: pre-wrap !important;
+          line-height: 1.4 !important;
+        }
+
+        @keyframes slide-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes scale-up { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
       `}</style>
     </div>
   );

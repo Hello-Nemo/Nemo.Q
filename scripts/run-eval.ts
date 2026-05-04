@@ -55,13 +55,14 @@ async function runEval() {
         });
 
         step.toolResults?.forEach(result => {
+          const res = (result as any).output || (result as any).result;
           // 如果是 semanticQuery，尝试从审计信息中提取生成的 SQL 用于校验
-          if (result.toolName === 'semanticQuery' && result.result && (result.result as any).audit) {
-            generatedSql = (result.result as any).audit.sql;
+          if (result.toolName === 'semanticQuery' && res && (res as any).audit) {
+            generatedSql = (res as any).audit.sql;
           }
 
-          if (result.result && (result.result as any).error) {
-            stepSummary[idx] += ` (Error: ${(result.result as any).error})`;
+          if (res && (res as any).error) {
+            stepSummary[idx] += ` (Error: ${(res as any).error})`;
             if (result.toolName === 'executeQuery' || result.toolName === 'semanticQuery') {
               hasError = true;
             }
@@ -119,7 +120,7 @@ async function runEval() {
       });
 
       console.log(`   - 步骤: ${stepSummary.join(' -> ')}`);
-      console.log(`   - 回答: ${output.substring(0, 100)}...`);
+      console.log(`   - 回答: ${(output as any).substring(0, 100)}...`);
       console.log(`   - 评分: ${score}/100 | ${reasons.join(', ')}`);
 
     } catch (e: any) {

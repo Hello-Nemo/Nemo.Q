@@ -189,7 +189,7 @@ export const askClarification = tool({
       label: z.string().describe('选项显示的文本（如："按日环比"）'),
       value: z.string().describe('选中该选项后代表的业务定义（如："daily_growth"）'),
       description: z.string().optional().describe('选项的详细说明'),
-    })).optional().describe('预设的结构化备选选项，方便用户直接点击'),
+    })).describe('预设的结构化备选选项，方便用户直接点击'),
     context: z.string().optional().describe('产生歧义的业务背景或逻辑冲突描述'),
   }),
   execute: async (args) => {

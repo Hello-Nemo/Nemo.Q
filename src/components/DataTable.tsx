@@ -29,8 +29,32 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
   };
 
   const formatValue = (val: any) => {
-    if (typeof val === 'number') return val.toLocaleString();
     if (val === null || val === undefined) return <span className="null-label">NULL</span>;
+
+    // 1. ISO Date String handling (e.g., 2024-03-31T16:00:00.000Z)
+    if (typeof val === 'string' && val.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('zh-CN', { 
+          year: 'numeric', 
+          month: '2-digit', 
+          day: '2-digit' 
+        });
+      }
+    }
+
+    // 2. Number or Numeric String (Amount) handling
+    // If it's a number, or a string that looks like a decimal amount (e.g., "100.00")
+    if (typeof val === 'number' || (typeof val === 'string' && val.match(/^-?\d+\.\d+$/))) {
+      const num = Number(val);
+      if (!isNaN(num)) {
+        return num.toLocaleString('zh-CN', {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2
+        });
+      }
+    }
+    
     return String(val);
   };
 
@@ -98,7 +122,7 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 16px 24px;
+          padding: 8px 16px;
           background: rgba(0,0,0,0.01);
           border-bottom: 1px solid rgba(0,0,0,0.03);
         }
@@ -120,7 +144,7 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
         }
 
         th {
-          padding: 16px 24px;
+          padding: 10px 16px;
           text-align: left;
           background: #FFF;
           border-bottom: 1px solid rgba(0,0,0,0.05);
@@ -130,12 +154,12 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
         }
         .th-content { display: flex; align-items: center; gap: 8px; }
         .th-icon { color: var(--text-tertiary); opacity: 0.7; }
-        .th-label { font-size: 11px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+        .th-label { font-size: 10px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
         .sort-trigger { color: var(--text-tertiary); opacity: 0; transition: opacity 0.2s; }
         th:hover .sort-trigger { opacity: 1; }
 
         td {
-          padding: 14px 24px;
+          padding: 8px 16px;
           font-size: 14px;
           color: var(--text-primary);
           border-bottom: 1px solid rgba(0,0,0,0.03);

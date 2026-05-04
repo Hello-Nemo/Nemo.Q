@@ -1,54 +1,42 @@
 {
-  "timestamp": "2026-05-03T13:53:55.770Z",
-  "averageScore": 97.5,
+  "timestamp": "2026-05-04T03:25:03.610Z",
+  "averageScore": 0,
   "results": [
     {
       "id": "q1",
       "question": "列出所有来自中国的用户",
-      "score": 105,
-      "reasons": [
-        "成功生成 SQL",
-        "SQL 执行成功",
-        "关键口径匹配",
-        "主动进行了数据采样"
-      ],
-      "generatedSql": "SELECT id, username, email, country, joined_at FROM users WHERE country = '中国' ORDER BY id"
+      "score": 0,
+      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
     },
     {
       "id": "q2",
       "question": "计算上个月的总销售额",
-      "score": 105,
-      "reasons": [
-        "成功生成 SQL",
-        "SQL 执行成功",
-        "关键口径匹配",
-        "主动进行了数据采样"
-      ],
-      "generatedSql": "SELECT \n    DATE_TRUNC('month', order_date) AS 月份,\n    SUM(total_price) AS 总销售额,\n    COUNT(id) AS 订单总数,\n    ROUND(AVG(total_price), 2) AS 客单价,\n    SUM(quantity) AS 总销量\nFROM orders\nWHERE order_date >= '2024-04-01' \n  AND order_date < '2024-05-01'\nGROUP BY 1;"
+      "score": 0,
+      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
     },
     {
       "id": "q3",
       "question": "找出购买过 Electronics 类产品次数最多的前 3 名用户",
-      "score": 105,
-      "reasons": [
-        "成功生成 SQL",
-        "SQL 执行成功",
-        "关键口径匹配",
-        "主动进行了数据采样"
-      ],
-      "generatedSql": "SELECT \n    u.username,\n    SUM(o.quantity) AS total_items,\n    COUNT(o.id) AS order_count,\n    SUM(o.total_price) AS total_spent\nFROM users u\nJOIN orders o ON u.id = o.user_id\nJOIN products p ON o.product_id = p.id\nWHERE p.category = '电子产品'\nGROUP BY u.id, u.username\nORDER BY total_items DESC\nLIMIT 3"
+      "score": 0,
+      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
     },
     {
-      "id": "q4",
-      "question": "哪些产品的库存已经低于警戒线了？",
-      "score": 75,
-      "reasons": [
-        "成功生成 SQL",
-        "SQL 执行成功",
-        "关键口径缺失",
-        "主动进行了数据采样"
-      ],
-      "generatedSql": "SELECT id, name, category, stock FROM products ORDER BY stock ASC"
+      "id": "p2-aov",
+      "question": "我想看下各个国家的客单价 (AOV) 是多少？",
+      "score": 0,
+      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+    },
+    {
+      "id": "p2-age-group",
+      "question": "按年龄段 (Age Group) 统计一下最近一个月的订单量。",
+      "score": 0,
+      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+    },
+    {
+      "id": "p2-mom",
+      "question": "对比一下最近一个月和上个月的销售额变化。",
+      "score": 0,
+      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
     }
   ]
 }
