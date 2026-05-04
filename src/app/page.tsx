@@ -118,7 +118,10 @@ export default function ChatPage() {
       }
 
       await updateSession(currentSessionId, {
-        messages,
+        messages: messages.map(m => ({
+          ...m,
+          createdAt: m.createdAt || new Date()
+        })),
         ...(title ? { title } : {})
       });
     };
@@ -633,8 +636,17 @@ export default function ChatPage() {
                   
                   {message.role === 'user' ? (
                     <div className="user-turn-content">
-                      <div className="user-bubble">
-                        {(message.parts.find(p => p.type === 'text') as any)?.text || ''}
+                      <div className="user-turn-inner">
+                        <div className="user-meta">
+                          <span className="timestamp">
+                            {new Date(message.createdAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          </span>
+                          <div className="meta-sep" />
+                          <span className="user-label">YOU</span>
+                        </div>
+                        <div className="user-bubble">
+                          {(message.parts.find(p => p.type === 'text') as any)?.text || ''}
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -643,7 +655,9 @@ export default function ChatPage() {
                         <div className="agent-orb" />
                         <span className="agent-label">NEMO.Q</span>
                         <div className="meta-sep" />
-                        <span className="timestamp">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <span className="timestamp">
+                          {new Date(message.createdAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </span>
                       </div>
                       <div className="turn-body">
                         {(() => {
@@ -789,8 +803,9 @@ export default function ChatPage() {
         .message-turn { position: relative; width: 100%; }
         
         .user-turn-content { display: flex; justify-content: flex-end; }
+        .user-turn-inner { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 80%; }
+        .user-meta { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 10px; font-weight: 800; color: var(--text-tertiary); letter-spacing: 0.1em; }
         .user-bubble { 
-          max-width: 80%; 
           background: var(--text-primary); 
           color: white; 
           padding: 16px 24px; 
