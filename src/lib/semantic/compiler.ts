@@ -1,4 +1,4 @@
-import { QueryPlan, SemanticLayer, Metric, Dimension, Entity, Relationship } from './types';
+import { QueryPlan, SemanticLayer, Metric, Dimension, Entity, Relationship, CompilationResult, Lineage } from './types';
 
 /**
  * 路径发现器：使用 Dijkstra 算法在语义图中寻找最优 Join 路径
@@ -115,7 +115,7 @@ export class SQLCompiler {
     this.pathFinder = new PathFinder(semanticLayer);
   }
 
-  compile(plan: QueryPlan): string {
+  compile(plan: QueryPlan): CompilationResult {
     const metrics = plan.metrics.map(m => this.semanticLayer.metrics[m.id]).filter(Boolean);
     const dimensions = plan.dimensions.map(d => this.semanticLayer.dimensions[d.id]).filter(Boolean);
 
@@ -163,7 +163,7 @@ export class SQLCompiler {
   /**
    * 单阶段编译：标准 Join 逻辑
    */
-  private compileSinglePass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): string {
+  private compileSinglePass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): CompilationResult {
     const requiredEntityIds = new Set<string>();
     metrics.forEach(m => requiredEntityIds.add(m.entityId));
     dimensions.forEach(d => requiredEntityIds.add(d.entityId));
@@ -189,15 +189,31 @@ export class SQLCompiler {
       : '';
     const limitClause = plan.limit ? ` LIMIT ${plan.limit}` : '';
 
-    return `SELECT ${selectItems.join(', ')} ${fromClause}${whereClause}${groupByClause}${orderByClause}${limitClause}`;
+    const sql = `SELECT ${selectItems.join(', ')} ${fromClause}${whereClause}${groupByClause}${orderByClause}${limitClause}`;
+    
+    return {
+      sql,
+      lineage: {
+        path,
+        entities: Array.from(requiredEntityIds),
+        metrics: metrics.map(m => m.id),
+        dimensions: dimensions.map(d => d.id),
+        isMultiPass: false,
+        type: 'SinglePass'
+      }
+    };
   }
 
   /**
    * 多阶段编译 (Multi-pass)：应对 Chasm Trap，保证指标聚合准确性
    */
-  private compileMultiPass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[], factEntities: Set<string>): string {
+  private compileMultiPass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[], factEntities: Set<string>): CompilationResult {
     const ctes: string[] = [];
     const factList = Array.from(factEntities);
+    const allRequiredEntities = new Set<string>(factList);
+    dimensions.forEach(d => allRequiredEntities.add(d.entityId));
+    
+    const combinedPath: string[] = [];
 
     // 1. 为每个事实表生成独立的局部聚合 CTE
     factList.forEach((factId, index) => {
@@ -205,6 +221,9 @@ export class SQLCompiler {
       const factEntitiesRequired = new Set<string>([factId, ...dimensions.map(d => d.entityId)]);
       const path = this.pathFinder.findBestPath(factEntitiesRequired);
       
+      // 合并路径用于 Lineage
+      path.forEach(p => { if (!combinedPath.includes(p)) combinedPath.push(p); });
+
       const selectItems = [
         ...dimensions.map(d => `${d.transform || d.column} AS dim_${d.id}`),
         ...factMetrics.map(m => `${this.resolveMetricExpression(m)} AS ${m.id}`)
@@ -236,19 +255,32 @@ export class SQLCompiler {
       : '';
     const limit = plan.limit ? ` LIMIT ${plan.limit}` : '';
 
-    return `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} ${finalFrom}${orderBy}${limit}`;
+    const sql = `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} ${finalFrom}${orderBy}${limit}`;
+
+    return {
+      sql,
+      lineage: {
+        path: combinedPath,
+        entities: Array.from(allRequiredEntities),
+        metrics: metrics.map(m => m.id),
+        dimensions: dimensions.map(d => d.id),
+        isMultiPass: true,
+        type: 'MultiPass'
+      }
+    };
   }
 
   /**
    * 同环比编译：基于 Multi-pass 生成对比查询
    */
-  private compileComparison(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): string {
+  private compileComparison(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): CompilationResult {
     const type = plan.comparison!.type;
     const interval = type === 'MoM' ? '1 month' : type === 'YoY' ? '1 year' : '1 period';
 
     // 1. 生成“当前周期” CTE
     const currentPlan = { ...plan, comparison: undefined };
-    const currentSql = this.compileSinglePass(currentPlan, metrics, dimensions);
+    const currentResult = this.compileSinglePass(currentPlan, metrics, dimensions);
+    const currentSql = currentResult.sql;
     
     // 2. 生成“历史周期” CTE
     const historicalPlan = { 
@@ -280,7 +312,15 @@ export class SQLCompiler {
       ? ` ON ${dimensions.map(d => `current_period.${d.id} = historical_period.${d.id}`).join(' AND ')}` 
       : ' ON 1=1';
 
-    return `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} FROM current_period LEFT JOIN historical_period${joinOn}`;
+    const sql = `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} FROM current_period LEFT JOIN historical_period${joinOn}`;
+
+    return {
+      sql,
+      lineage: {
+        ...currentResult.lineage,
+        type: 'Comparison'
+      }
+    };
   }
 
   private buildJoinClause(path: string[]): string {

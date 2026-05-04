@@ -288,6 +288,113 @@ export default function ChatPage() {
         );
       }
 
+      case 'tool-previewQueryPlan': {
+        const toolPart = part as any;
+        const args = toolPart.args || toolPart.input || {};
+        const output = toolPart.output as any;
+        const state = toolPart.state || 'unknown';
+        
+        // 预览结果可能在 output 中（如果已执行）或在 args 中（如果是待确认状态）
+        const displayData = output || args;
+        
+        return (
+          <div key={`part-preview-${i}`} className="part-unit flow-part animate-fade-in">
+            <div className="preview-container">
+              <div className="preview-label">
+                <ShieldCheck size={14} />
+                <span>意图确认 / INTENT_CONFIRMATION</span>
+              </div>
+              
+              <SqlAudit 
+                sql={displayData.sql} 
+                explanation={displayData.explanation}
+                debugRaw={{ output: { audit: { lineage: displayData.lineage, plan: displayData.plan } } }}
+              />
+
+              {state === 'call' && !output && (
+                <div className="preview-actions">
+                  <button 
+                    className="confirm-btn soft-surface"
+                    onClick={() => safeSendMessage({ text: "确认执行该计划" })}
+                  >
+                    <Zap size={14} />
+                    <span>确认并执行</span>
+                  </button>
+                  <button 
+                    className="cancel-btn soft-surface"
+                    onClick={() => safeSendMessage({ text: "我不确定，请重新调整" })}
+                  >
+                    <AlertCircle size={14} />
+                    <span>重新调整</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            <style jsx>{`
+              .preview-container {
+                background: rgba(255, 255, 255, 0.6);
+                border: 1px solid var(--accent-primary);
+                border-radius: 20px;
+                padding: 24px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+                box-shadow: 0 10px 30px rgba(99, 102, 241, 0.08);
+              }
+              .preview-label {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-family: var(--font-mono);
+                font-size: 10px;
+                font-weight: 800;
+                color: var(--accent-primary);
+              }
+              .preview-actions {
+                display: flex;
+                gap: 12px;
+                margin-top: 8px;
+              }
+              .confirm-btn {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                padding: 14px;
+                background: #0F172A;
+                color: #FFF;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: 800;
+                cursor: pointer;
+                transition: all 0.3s;
+              }
+              .confirm-btn:hover {
+                background: #1E293B;
+                transform: scale(1.02);
+              }
+              .cancel-btn {
+                padding: 14px 24px;
+                background: #FFFFFF;
+                color: #64748B;
+                border: 1px solid #E2E8F0;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.3s;
+              }
+              .cancel-btn:hover {
+                background: #F8FAFC;
+                color: #1E293B;
+              }
+            `}</style>
+          </div>
+        );
+      }
+
       case 'tool-executeQuery': {
         const toolPart = part as any;
         if (!toolPart) return null;

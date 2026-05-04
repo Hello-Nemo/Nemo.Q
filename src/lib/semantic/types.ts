@@ -83,6 +83,20 @@ export interface QueryPlan {
   limit?: number;
 }
 
+export interface Lineage {
+  path: string[];
+  entities: string[];
+  metrics: string[];
+  dimensions: string[];
+  isMultiPass: boolean;
+  type: 'SinglePass' | 'MultiPass' | 'Comparison';
+}
+
+export interface CompilationResult {
+  sql: string;
+  lineage: Lineage;
+}
+
 export interface CompiledQuery {
   sql: string;
   params: unknown[];
@@ -90,11 +104,6 @@ export interface CompiledQuery {
   certificationLevel: 'certified_plan' | 'semantic_compiled';
   explanation: string;
   assumptions: string[];
-  lineage: {
-    metrics: string[];
-    dimensions: string[];
-    entities: string[];
-    relationships: string[];
-  };
+  lineage: Lineage;
 }
 

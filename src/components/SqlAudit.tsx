@@ -14,11 +14,14 @@ import {
   Zap,
   Layers,
   FileSearch,
-  Code
+  Code,
+  Eye,
+  Settings2
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github.css';
+import PlanVisualizer from './PlanVisualizer';
 
 interface SqlAuditProps {
   sql?: string;
@@ -43,6 +46,9 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
   const hasData = !!(sql || explanation || safeAssumptions.length > 0);
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [viewMode, setViewMode] = useState<'logic' | 'sql'>('logic');
+
+  const lineage = plan.lineage || rawAudit.lineage;
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -86,6 +92,24 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
         </div>
         
         <div className="trigger-right">
+          {isOpen && lineage && (
+            <div className="view-toggle" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className={`toggle-btn ${viewMode === 'logic' ? 'active' : ''}`}
+                onClick={() => setViewMode('logic')}
+              >
+                <Eye size={12} />
+                <span>逻辑视图</span>
+              </button>
+              <button 
+                className={`toggle-btn ${viewMode === 'sql' ? 'active' : ''}`}
+                onClick={() => setViewMode('sql')}
+              >
+                <Code size={12} />
+                <span>SQL 视图</span>
+              </button>
+            </div>
+          )}
           {sql && (
             <button 
               className={`copy-mini ${copied ? 'success' : ''}`} 
@@ -104,124 +128,147 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
 
       {isOpen && (
         <div className="audit-content animate-slide-down">
-          <div className="audit-grid">
-            {/* 语义资产区块 (Metrics & Dimensions) */}
-            { (metrics.length > 0 || dimensions.length > 0) && (
-            <div className="audit-section full-width semantic-summary">
-              <div className="section-header">
-                <div className="icon-box assets">
-                  <Layers size={14} />
-                </div>
-                <div className="label-group">
-                  <span className="section-label">语义资产映射</span>
-                  <span className="section-sub">SEMANTIC_ASSETS_LINEAGE</span>
+          {viewMode === 'logic' && lineage ? (
+            <div className="logic-view-container">
+              <PlanVisualizer lineage={lineage} explanation={explanation} />
+              
+              <div className="logic-metadata">
+                <div className="metadata-item">
+                  <span className="meta-label">核心假设</span>
+                  <div className="meta-content">
+                    {safeAssumptions.length > 0 ? (
+                      <ul className="mini-assumption-list">
+                        {safeAssumptions.map((item: string, idx: number) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="empty-meta">遵循标准口径</span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="section-content">
-                <div className="assets-display">
-                  <div className="asset-type">
-                    <span className="type-tag">指标</span>
-                    <div className="tag-list">
-                      {metrics.length > 0 ? metrics.map((m: any, i: number) => (
-                        <span key={i} className="tag metric-tag">{typeof m === 'string' ? m : (m.id || m.name)}</span>
-                      )) : <span className="tag empty">无明确指标</span>}
+            </div>
+          ) : (
+            <div className="audit-grid">
+              {/* 语义资产区块 (Metrics & Dimensions) */}
+              { (metrics.length > 0 || dimensions.length > 0) && (
+              <div className="audit-section full-width semantic-summary">
+                <div className="section-header">
+                  <div className="icon-box assets">
+                    <Layers size={14} />
+                  </div>
+                  <div className="label-group">
+                    <span className="section-label">语义资产映射</span>
+                    <span className="section-sub">SEMANTIC_ASSETS_LINEAGE</span>
+                  </div>
+                </div>
+                <div className="section-content">
+                  <div className="assets-display">
+                    <div className="asset-type">
+                      <span className="type-tag">指标</span>
+                      <div className="tag-list">
+                        {metrics.length > 0 ? metrics.map((m: any, i: number) => (
+                          <span key={i} className="tag metric-tag">{typeof m === 'string' ? m : (m.id || m.name)}</span>
+                        )) : <span className="tag empty">无明确指标</span>}
+                      </div>
+                    </div>
+                    <div className="asset-type">
+                      <span className="type-tag">维度</span>
+                      <div className="tag-list">
+                        {dimensions.length > 0 ? dimensions.map((d: any, i: number) => (
+                          <span key={i} className="tag dimension-tag">{typeof d === 'string' ? d : (d.id || d.name)}</span>
+                        )) : <span className="tag empty">全局聚合</span>}
+                      </div>
                     </div>
                   </div>
-                  <div className="asset-type">
-                    <span className="type-tag">维度</span>
-                    <div className="tag-list">
-                      {dimensions.length > 0 ? dimensions.map((d: any, i: number) => (
-                        <span key={i} className="tag dimension-tag">{typeof d === 'string' ? d : (d.id || d.name)}</span>
-                      )) : <span className="tag empty">全局聚合</span>}
+                </div>
+              </div>
+              )}
+
+              {/* 业务逻辑区块 */}
+              <div className="audit-section">
+                <div className="section-header">
+                  <div className="icon-box info">
+                    <Info size={14} />
+                  </div>
+                  <div className="label-group">
+                    <span className="section-label">业务逻辑解析</span>
+                    <span className="section-sub">LOGIC_DECODING</span>
+                  </div>
+                </div>
+                <div className="section-content">
+                  <p className="narrative-text">
+                    {explanation || '等待系统挂载审计证据...'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 业务假设区块 */}
+              <div className="audit-section">
+                <div className="section-header">
+                  <div className="icon-box warning">
+                    <Zap size={14} />
+                  </div>
+                  <div className="label-group">
+                    <span className="section-label">前置业务假设</span>
+                    <span className="section-sub">DOMAIN_ASSUMPTIONS</span>
+                  </div>
+                </div>
+                <div className="section-content">
+                  {safeAssumptions.length > 0 ? (
+                    <ul className="assumption-list">
+                      {safeAssumptions.map((item: string, idx: number) => (
+                        <li key={idx} className="assumption-item">
+                          <ArrowRight size={12} className="bullet" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="empty-assumptions">
+                      <p>遵循标准业务口径，无特殊假设。</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SQL 区块 */}
+              <div className="audit-section full-width">
+                <div className="section-header">
+                  <div className="icon-box code">
+                    <Code size={14} />
+                  </div>
+                  <div className="label-group">
+                    <span className="section-label">底层执行脚本</span>
+                    <span className="section-sub">SQL_EXECUTION_SOURCE</span>
+                  </div>
+                </div>
+                <div className="section-content">
+                  <div className="sql-box-wrapper">
+                    <div className="sql-header">
+                      <div className="sql-info">
+                        <Database size={12} />
+                        <span>DB_SOURCE / AUTO_GENERATED</span>
+                      </div>
+                      <button 
+                        className={`sql-copy-btn ${copied ? 'copied' : ''}`}
+                        onClick={handleCopy}
+                      >
+                        {copied ? <Check size={12} /> : <Copy size={12} />}
+                        <span>{copied ? '已复制' : '复制'}</span>
+                      </button>
+                    </div>
+                    <div className="sql-render-area">
+                      <ReactMarkdown rehypePlugins={[rehypeHighlight]}>
+                        {`\`\`\`sql\n${sql?.trim() || '-- 脚本生成中...'}\n\`\`\``}
+                      </ReactMarkdown>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-            )}
-
-            {/* 业务逻辑区块 */}
-            <div className="audit-section">
-              <div className="section-header">
-                <div className="icon-box info">
-                  <Info size={14} />
-                </div>
-                <div className="label-group">
-                  <span className="section-label">业务逻辑解析</span>
-                  <span className="section-sub">LOGIC_DECODING</span>
-                </div>
-              </div>
-              <div className="section-content">
-                <p className="narrative-text">
-                  {explanation || '等待系统挂载审计证据...'}
-                </p>
-              </div>
-            </div>
-
-            {/* 业务假设区块 */}
-            <div className="audit-section">
-              <div className="section-header">
-                <div className="icon-box warning">
-                  <Zap size={14} />
-                </div>
-                <div className="label-group">
-                  <span className="section-label">前置业务假设</span>
-                  <span className="section-sub">DOMAIN_ASSUMPTIONS</span>
-                </div>
-              </div>
-              <div className="section-content">
-                {safeAssumptions.length > 0 ? (
-                  <ul className="assumption-list">
-                    {safeAssumptions.map((item: string, idx: number) => (
-                      <li key={idx} className="assumption-item">
-                        <ArrowRight size={12} className="bullet" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="empty-assumptions">
-                    <p>遵循标准业务口径，无特殊假设。</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* SQL 区块 */}
-            <div className="audit-section full-width">
-              <div className="section-header">
-                <div className="icon-box code">
-                  <Code size={14} />
-                </div>
-                <div className="label-group">
-                  <span className="section-label">底层执行脚本</span>
-                  <span className="section-sub">SQL_EXECUTION_SOURCE</span>
-                </div>
-              </div>
-              <div className="section-content">
-                <div className="sql-box-wrapper">
-                  <div className="sql-header">
-                    <div className="sql-info">
-                      <Database size={12} />
-                      <span>DB_SOURCE / AUTO_GENERATED</span>
-                    </div>
-                    <button 
-                      className={`sql-copy-btn ${copied ? 'copied' : ''}`}
-                      onClick={handleCopy}
-                    >
-                      {copied ? <Check size={12} /> : <Copy size={12} />}
-                      <span>{copied ? '已复制' : '复制'}</span>
-                    </button>
-                  </div>
-                  <div className="sql-render-area">
-                    <ReactMarkdown rehypePlugins={[rehypeHighlight]}>
-                      {`\`\`\`sql\n${sql?.trim() || '-- 脚本生成中...'}\n\`\`\``}
-                    </ReactMarkdown>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -295,6 +342,72 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
         }
         
         .trigger-right { display: flex; align-items: center; gap: 14px; }
+        
+        .view-toggle {
+          display: flex;
+          background: rgba(0, 0, 0, 0.03);
+          padding: 2px;
+          border-radius: 8px;
+          border: 1px solid var(--surface-border);
+        }
+        .toggle-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 10px;
+          font-weight: 700;
+          color: var(--text-tertiary);
+          transition: all 0.2s;
+        }
+        .toggle-btn.active {
+          background: #FFFFFF;
+          color: var(--accent-primary);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .toggle-btn:not(.active):hover {
+          color: var(--text-secondary);
+          background: rgba(0,0,0,0.02);
+        }
+
+        .logic-view-container {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        
+        .logic-metadata {
+          padding-top: 16px;
+          border-top: 1px dashed var(--surface-border);
+        }
+        .metadata-item {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .meta-label {
+          font-size: 10px;
+          font-weight: 800;
+          color: var(--text-tertiary);
+          text-transform: uppercase;
+        }
+        .mini-assumption-list {
+          list-style: none;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .mini-assumption-list li {
+          font-size: 11px;
+          padding: 3px 10px;
+          background: rgba(0,0,0,0.02);
+          border: 1px solid var(--surface-border);
+          border-radius: 6px;
+          color: var(--text-secondary);
+        }
+        .empty-meta { font-size: 12px; color: var(--text-tertiary); font-style: italic; }
+
         .copy-mini { color: var(--text-tertiary); padding: 6px; border-radius: 6px; }
         .copy-mini:hover { color: var(--accent-primary); background: rgba(99, 102, 241, 0.05); }
 

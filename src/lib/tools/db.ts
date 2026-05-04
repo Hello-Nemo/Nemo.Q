@@ -231,7 +231,8 @@ export const semanticQuery = tool({
     const compiler = new SQLCompiler(semanticLayer);
     
     try {
-      const sql = compiler.compile(plan as QueryPlan);
+      const compilationResult = compiler.compile(plan as QueryPlan);
+      const { sql, lineage } = compilationResult;
       console.log('[DEBUG] semanticQuery generated SQL:', sql);
       
       const ds = getDataSource();
@@ -243,6 +244,7 @@ export const semanticQuery = tool({
             sql, 
             explanation, 
             plan,
+            lineage,
             isCertified: true 
           }
         };
@@ -255,6 +257,34 @@ export const semanticQuery = tool({
   },
 });
 
+/**
+ * 预览查询计划：仅编译不执行，用于用户确认逻辑
+ */
+export const previewQueryPlan = tool({
+  description: '在执行复杂查询前预览生成的逻辑路径和 SQL 结构。适用于多表关联或对比分析场景。',
+  inputSchema: z.object({
+    explanation: z.string().describe('用自然语言说明本次查询的业务意图。'),
+    plan: z.any().describe('结构化的查询计划 (QueryPlan)'),
+  }),
+  execute: async ({ plan, explanation }) => {
+    const projectName = process.env.CURRENT_PROJECT || 'default';
+    const semanticLayer = getSemanticLayer(projectName);
+    const compiler = new SQLCompiler(semanticLayer);
+    
+    try {
+      const result = compiler.compile(plan as QueryPlan);
+      return {
+        ...result,
+        explanation,
+        requires_action: true, // 强制暂停，等待用户在 UI 点击“确认执行”
+        preview: true
+      };
+    } catch (e: any) {
+      return { error: `计划生成失败: ${e.message}` };
+    }
+  },
+});
+
 export const dbTools = {
   getSchema,
   executeQuery,
@@ -262,6 +292,7 @@ export const dbTools = {
   searchTables,
   askClarification,
   semanticQuery,
+  previewQueryPlan,
   listSemanticAtoms,
 };
 

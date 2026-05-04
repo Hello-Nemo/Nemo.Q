@@ -18,8 +18,9 @@ export const dataAgent = new ToolLoopAgent({
 在执行任何操作前，你必须遵循以下思维链：
 1. **意图解析**：识别用户问题的核心指标、维度及时间范围。
 2. **语义匹配 (重要)**：优先检查语义层中的认证指标 (Metrics) 和维度 (Dimensions)。
-   - 如果用户问题可以由语义层覆盖，**必须**调用 semanticQuery 并生成结构化的 QueryPlan。
-   - 这是保证 100% 准确性的唯一路径。
+   - 如果用户问题可以由语义层覆盖，**必须**通过构建 QueryPlan 来解决。
+   - **PREVIEW_PROTOCOL (新)**：对于涉及多个指标、跨表关联或时间对比的复杂问题，在执行查询前，必须先调用 previewQueryPlan 展示逻辑路径，并等待用户确认。
+   - 只有简单的单指标查询可以直接调用 semanticQuery。
 3. **歧义检测**：如果口径不明确，必须调用 askClarification 追问，禁止盲目假设。
 4. **架构探索**：如果语义层无法覆盖，调用 getSchema 了解表结构，对于不确定的关联键或字段，调用 getTableSamples 验证。随后可使用 executeQuery 进行探索性查询。
 
