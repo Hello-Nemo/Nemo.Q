@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Trash2
 } from 'lucide-react';
+import Logo from './Logo';
 import { useHistory } from './HistoryContext';
 
 interface SidebarProps {
@@ -45,20 +46,20 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Top Section: Brand + New Chat */}
       <div className="top-section">
         <div className="sidebar-header">
-          {!collapsed && (
-            <div className="brand">
-              <div className="brand-aura">
-                <Sparkles size={16} fill="currentColor" />
+          {collapsed ? (
+            <button onClick={onToggle} className="logo-toggle-btn">
+              <Logo size={24} showText={false} />
+            </button>
+          ) : (
+            <>
+              <div className="brand">
+                <Logo size={28} showText={true} />
               </div>
-              <div className="brand-info">
-                <span className="brand-name">Lumina</span>
-                <span className="brand-tag">INTELLIGENCE</span>
-              </div>
-            </div>
+              <button onClick={onToggle} className="toggle-btn soft-surface">
+                <PanelLeftClose size={18} />
+              </button>
+            </>
           )}
-          <button onClick={onToggle} className="toggle-btn soft-surface">
-            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          </button>
         </div>
 
         <div className="action-area">
@@ -66,8 +67,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             onClick={() => createSession()}
             className={`new-analysis-btn ${collapsed ? 'collapsed' : ''} soft-surface`}
           >
-            <PlusCircle size={20} className="plus-icon" />
-            {!collapsed && <span>开启新洞察</span>}
+            <div className="btn-icon-wrap">
+              <PlusCircle size={20} className="plus-icon" />
+            </div>
+            <div className="btn-text-wrap">
+              <span>开启新洞察</span>
+            </div>
             <div className="btn-glow" />
           </button>
         </div>
@@ -165,10 +170,27 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           justify-content: space-between;
           padding: 0 12px;
         }
+        .sidebar-inner.collapsed .sidebar-header {
+          padding: 0;
+          justify-content: center;
+        }
+        .logo-toggle-btn {
+          background: transparent;
+          border: none;
+          padding: 0;
+          cursor: pointer;
+          transition: transform 0.3s var(--spring);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .logo-toggle-btn:hover {
+          transform: scale(1.15);
+        }
         .brand { display: flex; align-items: center; gap: 12px; }
         .brand-aura {
           width: 32px; height: 32px;
-          background: linear-gradient(135deg, #6366f1, #a855f7);
+          background: linear-gradient(135deg, #3B82F6, #1E40AF);
           border-radius: 10px;
           display: flex; align-items: center; justify-content: center;
           color: white;
@@ -201,22 +223,52 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         .action-area { padding: 0 8px; }
         .new-analysis-btn {
           width: 100%;
-          padding: 14px;
-          display: flex; align-items: center; gap: 12px;
-          border-radius: 16px;
+          height: 48px;
+          display: flex; align-items: center;
+          border-radius: 24px; /* 使用高度的一半确保完美圆角 */
           font-size: 14px; font-weight: 700;
           color: var(--text-primary);
           position: relative;
           overflow: hidden;
-          transition: all 0.4s var(--spring);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          padding: 0 14px;
+          justify-content: flex-start;
         }
-        .new-analysis-btn.collapsed { width: 44px; height: 44px; padding: 0; justify-content: center; }
-        .new-analysis-btn :global(svg) { flex-shrink: 0; }
+        .new-analysis-btn.collapsed { 
+          padding: 0;
+          aspect-ratio: 1 / 1;
+          justify-content: center;
+        }
+        
+        .btn-icon-wrap {
+          width: 20px; /* 图标容器宽度保持恒定 */
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .new-analysis-btn.collapsed .btn-icon-wrap {
+          width: 100%; /* 收起时占满圆中心 */
+        }
+
+        .btn-text-wrap {
+          margin-left: 12px;
+          white-space: nowrap;
+          overflow: hidden;
+          transition: all 0.3s ease;
+          opacity: 1;
+        }
+        .new-analysis-btn.collapsed .btn-text-wrap {
+          width: 0;
+          margin-left: 0;
+          opacity: 0;
+        }
+
         .new-analysis-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-deep); border-color: var(--accent-primary); }
-        .plus-icon { color: var(--accent-primary); }
+        .plus-icon { color: #FF5C00; flex-shrink: 0; }
         .btn-glow {
           position: absolute; inset: 0;
-          background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(99, 102, 241, 0.05), transparent 70%);
+          background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(255, 92, 0, 0.05), transparent 70%);
           opacity: 0; transition: opacity 0.3s;
         }
         .new-analysis-btn:hover .btn-glow { opacity: 1; }

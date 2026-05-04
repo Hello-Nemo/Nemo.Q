@@ -1,65 +1,52 @@
-# Lumina Flow | Data Intelligence Workbench
+# Nemo.Q | 精准问询，还原真相。
 
-Lumina Flow is a premium, industrial-grade data intelligence platform designed for high-fidelity agentic decision-making. It transforms raw database interactions into a "Deep Space Surgical" cockpit experience, providing transparent, evidence-grounded insights.
+Nemo.Q 是一款专为高保真智能决策设计的工业级数据智能引擎。它将原始的数据库交互转化为“深空手术室”般的决策驾驶舱体验，提供透明、可溯源且具备极致精确性的数据洞察。
 
-## ✨ Features
+## ✨ 核心特性
 
-- **Agentic Reasoning Pipeline**: Real-time visualization of the AI agent's decision-making process, from thought to action.
-- **Insight Canvas**: A dynamic, ambient workspace for visualizing data anomalies, trends, and complex analytics.
-- **Ask Flow (Clarification System)**: Interactive clarification loops that resolve business logic ambiguities before execution, ensuring 100% accuracy.
-- **SQL Audit & Protocol**: Strict server-side schema validation and transparent SQL execution logs for enterprise-grade auditability.
-- **Semantic Layer**: Automated semantic bootstrapping that bridges the gap between raw data schemas and natural language intent.
-- **Surgical Aesthetics**: An ultra-minimalist UI featuring NovaPulse lighting, constellation grid patterns, and premium glassmorphism.
+- **智能推理流水线 (Agentic Pipeline)**：实时可视化 AI 代理从思维到行动的决策全过程，让每一步分析都清晰可见。
+- **洞察画布 (Insight Canvas)**：动态、沉浸式的协作空间，用于可视化数据异常、趋势及复杂的分析逻辑。
+- **问询流 (Ask Flow)**：交互式澄清机制，在执行前解决业务逻辑歧义，确保 100% 的决策准确率。
+- **SQL 审计协议 (SQL Audit)**：严格的服务端 Schema 校验与透明的执行日志，满足企业级的审计与合规要求。
+- **语义层架构 (Semantic Layer)**：自动化的语义引导技术，无缝衔接原始数据架构与自然语言意图。
+- **手术级美学 (Surgical Aesthetics)**：极致极简的 UI 设计，融合了 **Safety Orange (警戒橙)** 专业配色、几何构架与高级感质感。
 
-## 🚀 Tech Stack
+## 🚀 技术栈
 
-- **Core**: [Next.js](https://nextjs.org/) (App Router)
-- **AI Orchestration**: [Vercel AI SDK](https://sdk.vercel.ai/)
-- **Database**: PostgreSQL / MySQL (with scalable driver architecture)
-- **Styling**: Vanilla CSS with high-fidelity design tokens
-- **Visualization**: Recharts & Custom SVG Components
+- **前端**: Next.js 15+, React 19, TailwindCSS (Vanilla CSS 精调)
+- **AI 编排**: Vercel AI SDK, ActFlow 多代理框架
+- **数据层**: 支持异构数据库驱动 (PostgreSQL, MySQL, ClickHouse)
+- **视觉设计**: 动态 SVG 图腾, 响应式流体布局, 工业级微交互
 
-## 🛠️ Getting Started
+## 🛠 快速开始
 
-### Prerequisites
+### 1. 环境准备
+确保您的设备已安装 `node >= 20` 及 `pnpm` 或 `npm`。
 
-- Node.js (v20+)
-- pnpm (recommended)
-- Docker (for database environment)
+### 2. 安装依赖
+```bash
+pnpm install
+```
 
-### Setup
+### 3. 配置环境
+在根目录创建 `.env.local` 文件并配置您的 AI 模型密钥及数据库连接：
+```env
+OPENAI_API_KEY=your_key_here
+DATABASE_URL=your_db_connection_string
+```
 
-1. **Clone the repository**:
-   ```bash
-   git clone git@github.com:Hello-Nemo/data-agent.git
-   cd data-agent
-   ```
+### 4. 启动开发服务器
+```bash
+pnpm dev
+```
 
-2. **Install dependencies**:
-   ```bash
-   pnpm install
-   ```
+## 📐 设计原则
 
-3. **Configure environment**:
-   Copy `.env.example` to `.env` and fill in your AI provider keys and database credentials.
+Nemo.Q 的设计遵循 **“减法美学”**：
+- **确定性 (Certainty)**：使用硬边缘与高对比度配色（警戒橙）。
+- **通透感 (Transparency)**：通过悬浮布局与动态扫描线减少视觉压抑。
+- **响应性 (Responsiveness)**：每一个交互都应具备物理级的丝滑反馈。
 
-4. **Launch database**:
-   ```bash
-   docker-compose up -d
-   ```
+---
 
-5. **Start development server**:
-   ```bash
-   pnpm run dev
-   ```
-
-## 📐 Architecture
-
-- `/src/lib/agent.ts`: The core multi-agent orchestration logic.
-- `/src/lib/tools/`: Domain-specific tools for database interaction and visualization.
-- `/src/components/`: Premium UI components following the "Lumina Flow" design system.
-- `/scripts/`: Automated onboarding and evaluation utilities.
-
-## 📄 License
-
-MIT License. See [LICENSE](LICENSE) for details.
+*Precision In, Truth Out.* — **Nemo.Q 团队**

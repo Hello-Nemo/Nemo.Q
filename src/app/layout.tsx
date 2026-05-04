@@ -30,8 +30,8 @@ const notoMain = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: '智能问数 Agent',
-  description: '基于 Vercel AI SDK 的智能 PostgreSQL 数据分析助理',
+  title: 'Nemo.Q | Precision In, Truth Out.',
+  description: 'Surgical-Grade Data Intelligence Engine powered by Vercel AI SDK',
 };
 
 export default function RootLayout({
