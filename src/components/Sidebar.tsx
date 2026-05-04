@@ -190,7 +190,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         .brand { display: flex; align-items: center; gap: 12px; }
         .brand-aura {
           width: 32px; height: 32px;
-          background: linear-gradient(135deg, #3B82F6, #1E40AF);
+          background: linear-gradient(135deg, #FF5C00, #FF8A00);
           border-radius: 10px;
           display: flex; align-items: center; justify-content: center;
           color: white;
@@ -216,7 +216,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         }
         .toggle-btn:hover { 
           color: var(--accent-primary); 
-          background: rgba(99, 102, 241, 0.05);
+          background: rgba(255, 92, 0, 0.05);
           transform: scale(1.05); 
         }
 
@@ -264,7 +264,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           opacity: 0;
         }
 
-        .new-analysis-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-deep); border-color: var(--accent-primary); }
+        .new-analysis-btn:hover { 
+          transform: translateY(-2px); 
+          box-shadow: 0 8px 30px rgba(255, 92, 0, 0.15); 
+          border-color: #FF5C00;
+          background: #FFFFFF;
+        }
         .plus-icon { color: #FF5C00; flex-shrink: 0; }
         .btn-glow {
           position: absolute; inset: 0;
@@ -306,8 +311,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         .history-item.collapsed { width: 40px; height: 40px; padding: 0; justify-content: center; color: var(--text-tertiary); }
         .history-item:hover { background: rgba(0,0,0,0.03); transform: translateX(4px); }
         .history-item.collapsed:hover { transform: scale(1.1); background: white; }
-        .history-item.active { background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.2); }
-        .history-item.active :global(svg) { color: var(--accent-primary); opacity: 1; }
+        .history-item.active { background: rgba(255, 92, 0, 0.05); border-color: rgba(255, 92, 0, 0.2); }
+        .history-item.active :global(svg) { color: #FF5C00; opacity: 1; }
         .item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
         .item-title { 
           font-size: 13px; font-weight: 500; color: var(--text-primary); 

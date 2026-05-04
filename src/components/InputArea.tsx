@@ -37,7 +37,7 @@ export default function InputArea({ isLoading, onSend, onStop }: InputAreaProps)
                 handleSubmit();
               }
             }}
-            placeholder="与 Lumina 对话..."
+            placeholder="与 NEMO.Q 对话..."
             className="input-field"
             rows={1}
           />
@@ -83,7 +83,7 @@ export default function InputArea({ isLoading, onSend, onStop }: InputAreaProps)
         }
 
         .util-btn { color: var(--text-tertiary); padding: 8px; transition: all 0.3s; }
-        .util-btn:hover { color: var(--accent-primary); background: rgba(99, 102, 241, 0.05); border-radius: 50%; }
+        .util-btn:hover { color: var(--accent-primary); background: rgba(255, 92, 0, 0.05); border-radius: 50%; }
 
         .input-field {
           flex: 1;

@@ -37,7 +37,7 @@ import Logo from '@/components/Logo';
 
 const SUGGESTED_QUESTIONS = [
   "分析各国家的销售额和客单价",
-  "统计不同年龄段的用户数分布",
+  "分析各月份的销售额与订单趋势",
   "分析核心忠诚客户的表现",
   "找出最近退货率最高的产品类别",
 ];
@@ -240,12 +240,7 @@ export default function ChatPage() {
             <div className="scanline" />
           </div>
           
-          <div className="brand-subtext">
-            <div className="engine-status">
-              <span className="status-dot pulsing" />
-              <p>PRECISION_ENGINE / KERNEL_V4.0.0 / STANDBY</p>
-            </div>
-          </div>
+
         </div>
 
         <div className="hero-section">
@@ -273,27 +268,78 @@ export default function ChatPage() {
         .welcome-inner { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 64px; align-items: center; text-align: center; }
         
         .header-box { display: flex; flex-direction: column; align-items: center; gap: 24px; }
-        .brand-aura { 
-          width: 80px; height: 80px; 
-          background: linear-gradient(135deg, #6366f1, #a855f7);
-          border-radius: 24px; 
-          display: flex; align-items: center; justify-content: center; 
-          color: white;
-          box-shadow: 0 20px 40px rgba(99, 102, 241, 0.2);
+        
+        /* --- Hero Horizontal Brand Layout --- */
+        .hero-brand-unit {
           position: relative;
-          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 24px;
+          padding: 20px 40px;
+          margin-bottom: 10px;
+          white-space: nowrap;
+        }
+
+        .hero-logo-main {
+          filter: drop-shadow(0 0 30px rgba(255, 92, 0, 0.2));
           animation: logo-float 6s ease-in-out infinite;
         }
-        .brand-aura::after {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(transparent, rgba(255,255,255,0.25));
-        }
+
         @keyframes logo-float {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-10px); }
         }
-        .brand-text h1 { font-size: 28px; font-weight: 900; letter-spacing: -0.04em; color: var(--text-primary); }
-        .brand-text p { font-family: var(--font-mono); font-size: 10px; font-weight: 800; color: var(--accent-primary); letter-spacing: 0.2em; margin-top: 8px; opacity: 0.8; }
+
+        .hero-title-group {
+          display: flex;
+          align-items: baseline;
+          flex-shrink: 0;
+        }
+
+        .hero-name {
+          font-size: 110px;
+          font-weight: 900;
+          letter-spacing: -0.06em;
+          color: var(--text-primary);
+          line-height: 1;
+          margin: 0;
+        }
+
+        .hero-dot-q {
+          font-size: 80px;
+          font-weight: 900;
+          color: #FF5C00;
+          line-height: 1;
+          margin-left: 4px;
+        }
+
+        .hero-scan-area {
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 200px;
+          pointer-events: none;
+          z-index: 5;
+        }
+
+        .scanline {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 1.5px;
+          background: linear-gradient(to right, transparent, #FF5C00, transparent);
+          box-shadow: 0 0 20px rgba(255, 92, 0, 0.4);
+          animation: scan 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+
+        @keyframes scan {
+          0% { top: 10%; opacity: 0; }
+          15% { opacity: 0.8; }
+          85% { opacity: 0.8; }
+          100% { top: 90%; opacity: 0; }
+        }
+
+
 
         .hero-section { display: flex; flex-direction: column; gap: 16px; }
         .hero-title { font-size: 56px; font-weight: 800; letter-spacing: -0.05em; color: var(--text-primary); line-height: 1.1; }
@@ -807,104 +853,7 @@ export default function ChatPage() {
         .close-btn { color: var(--text-tertiary); padding: 8px; border-radius: 50%; }
         .close-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-primary); }
 
-        /* --- Hero Horizontal Brand Layout --- */
-        .hero-brand-unit {
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 24px;
-          padding: 20px 40px;
-          margin-bottom: 10px;
-          white-space: nowrap; /* 绝对禁止换行 */
-        }
 
-        .hero-title-group {
-          display: flex;
-          align-items: baseline;
-          flex-shrink: 0;
-        }
-
-        .hero-name {
-          font-size: 110px;
-          font-weight: 900;
-          letter-spacing: -0.06em;
-          color: var(--text-primary);
-          line-height: 1;
-          margin: 0;
-        }
-
-        .hero-dot-q {
-          font-size: 80px;
-          font-weight: 900;
-          color: #FF5C00;
-          line-height: 1;
-          margin-left: 4px;
-        }
-
-        .hero-scan-area {
-          position: absolute;
-          top: 0; left: 0; width: 100%; height: 200px;
-          pointer-events: none;
-          z-index: 5;
-        }
-
-        .scanline {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 1.5px;
-          background: linear-gradient(to right, transparent, #FF5C00, transparent);
-          box-shadow: 0 0 20px rgba(255, 92, 0, 0.4);
-          animation: scan 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-        }
-
-        @keyframes scan {
-          0% { top: 10%; opacity: 0; }
-          15% { opacity: 0.8; }
-          85% { opacity: 0.8; }
-          100% { top: 90%; opacity: 0; }
-        }
-
-        .engine-status {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          background: rgba(255, 92, 0, 0.05);
-          padding: 10px 24px;
-          border-radius: 100px;
-          border: 1px solid rgba(255, 92, 0, 0.1);
-          margin-top: 20px;
-        }
-
-        .status-dot {
-          width: 10px;
-          height: 10px;
-          background: #FF5C00;
-          border-radius: 50%;
-          box-shadow: 0 0 12px #FF5C00;
-        }
-
-        .pulsing {
-          animation: status-pulse 2s infinite;
-        }
-
-        @keyframes status-pulse {
-          0% { transform: scale(1); opacity: 0.5; }
-          50% { transform: scale(1.4); opacity: 1; }
-          100% { transform: scale(1); opacity: 0.5; }
-        }
-
-        .brand-subtext p {
-          font-family: var(--font-mono);
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.4em;
-          color: var(--text-primary);
-          margin: 0;
-          opacity: 0.7;
-        }
       `}</style>
     </WorkbenchLayout>
   );
