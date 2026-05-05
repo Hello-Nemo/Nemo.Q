@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   ChevronDown,
   ChevronLeft,
@@ -76,10 +76,12 @@ export default function ChatPage() {
     }
   }, [currentSessionId, createSession]);
 
+  const transport = useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
+
   const { messages, sendMessage, status, stop, error, setMessages } = useChat<DataAgentUIMessage>({
-    id: currentSessionId || undefined,
+    id: currentSessionId || 'new-session',
     initialMessages: initialMessages,
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+    transport,
     experimental_throttle: 50,
     onFinish: (message) => {
       // Final save when a message is fully streamed
@@ -92,10 +94,14 @@ export default function ChatPage() {
     }
   });
 
-  // Effect to handle multi-session switching in useChat hook
+  // Effect to handle multi-session switching and initial load
+  const lastLoadedSessionId = useRef<string | null>(null);
   useEffect(() => {
-    setMessages(initialMessages);
-  }, [initialMessages, setMessages]);
+    if (currentSessionId !== lastLoadedSessionId.current && initialMessages.length > 0 && status === 'ready') {
+      setMessages(initialMessages);
+      lastLoadedSessionId.current = currentSessionId;
+    }
+  }, [initialMessages, setMessages, currentSessionId, status]);
 
   // Effect to persist messages and generate title
   useEffect(() => {
@@ -143,9 +149,12 @@ export default function ChatPage() {
   const safeSendMessage = useCallback((params: { text: string }) => {
     if (isLoading) {
       stop();
+      // Wait for a tick to ensure the internal state settles after stopping
+      setTimeout(() => {
+        sendMessage(params);
+      }, 10);
+      return;
     }
-    // Small delay to ensure stop signal is processed if needed by transport
-    // but usually calling it sequentially is enough for the hook state.
     sendMessage(params);
   }, [isLoading, stop, sendMessage]);
 
