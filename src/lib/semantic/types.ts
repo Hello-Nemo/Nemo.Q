@@ -1,6 +1,7 @@
 /**
  * 语义层核心类型定义
  */
+import { z } from 'zod';
 
 export interface Metric {
   id: string;
@@ -57,31 +58,33 @@ export interface SemanticLayer {
 /**
  * Query Plan (IR) 定义
  */
-export interface QueryPlan {
-  intent: 'metric_query' | 'exploration' | 'comparison';
-  metrics: Array<{ id: string }>;
-  dimensions: Array<{ id: string }>;
-  timeRange?: {
-    type: 'preset' | 'absolute';
-    value?: string;
-    start?: string;
-    end?: string;
-    column?: string;
-  };
-  comparison?: {
-    type: 'YoY' | 'MoM' | 'PoP';
-  };
-  filters: Array<{
-    field: string;
-    operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'in' | 'between';
-    value: unknown;
-  }>;
-  orderBy?: Array<{
-    field: string;
-    direction: 'asc' | 'desc';
-  }>;
-  limit?: number;
-}
+export const queryPlanSchema = z.object({
+  intent: z.enum(['metric_query', 'exploration', 'comparison']),
+  metrics: z.array(z.object({ id: z.string() })),
+  dimensions: z.array(z.object({ id: z.string() })),
+  timeRange: z.object({
+    type: z.enum(['preset', 'absolute']),
+    value: z.string().optional(),
+    start: z.string().optional(),
+    end: z.string().optional(),
+    column: z.string().optional(),
+  }).optional(),
+  comparison: z.object({
+    type: z.enum(['YoY', 'MoM', 'PoP']),
+  }).optional(),
+  filters: z.array(z.object({
+    field: z.string(),
+    operator: z.enum(['=', '!=', '>', '<', '>=', '<=', 'in', 'between']),
+    value: z.any(),
+  })),
+  orderBy: z.array(z.object({
+    field: z.string(),
+    direction: z.enum(['asc', 'desc']),
+  })).optional(),
+  limit: z.number().optional(),
+});
+
+export type QueryPlan = z.infer<typeof queryPlanSchema>;
 
 export interface Lineage {
   path: string[];

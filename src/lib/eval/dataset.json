@@ -46,5 +46,13 @@
     "question": "对比一下最近一个月和上个月的销售额变化。",
     "gold_sql": "WITH current_period AS ... historical_period AS ...",
     "criteria": "sales_amount|comparison|MoM|semanticQuery"
+  },
+  {
+    "id": "p2-order-by",
+    "category": "Phase 2: 高级语义",
+    "difficulty": "medium",
+    "question": "销售额最高的前 3 个国家",
+    "gold_sql": "SELECT ... ORDER BY sales_amount DESC LIMIT 3",
+    "criteria": "ORDER BY|DESC|LIMIT|3|semanticQuery"
   }
 ]

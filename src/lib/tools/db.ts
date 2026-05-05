@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { PostgresDataSource, IDataSource } from '../db-connector';
 import { SQLCompiler } from '../semantic/compiler';
-import { QueryPlan, SemanticLayer } from '../semantic/types';
+import { QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
 
 
 // 加载语义层配置
@@ -205,25 +205,7 @@ export const semanticQuery = tool({
   description: '通过语义层进行标准指标查询。这是最推荐的取数方式，能够保证 100% 准确性。',
   inputSchema: z.object({
     explanation: z.string().describe('用自然语言说明本次查询的业务意图。'),
-    plan: z.object({
-      intent: z.enum(['metric_query', 'exploration', 'comparison']),
-      metrics: z.array(z.object({ id: z.string() })),
-      dimensions: z.array(z.object({ id: z.string() })),
-      timeRange: z.object({
-        type: z.enum(['preset', 'absolute']),
-        value: z.string(),
-      }).optional(),
-      comparison: z.object({
-        type: z.enum(['YoY', 'MoM', 'PoP']),
-      }).optional(),
-      filters: z.array(z.object({
-
-        field: z.string(),
-        operator: z.enum(['=', '!=', '>', '<', '>=', '<=', 'in', 'between']),
-        value: z.any(),
-      })),
-      limit: z.number().optional(),
-    }).describe('结构化的查询计划 (Query Plan)'),
+    plan: queryPlanSchema.describe('结构化的查询计划 (Query Plan)'),
   }),
   execute: async ({ plan, explanation }) => {
     const projectName = process.env.CURRENT_PROJECT || 'default';
@@ -264,7 +246,7 @@ export const previewQueryPlan = tool({
   description: '在执行复杂查询前预览生成的逻辑路径和 SQL 结构。适用于多表关联或对比分析场景。',
   inputSchema: z.object({
     explanation: z.string().describe('用自然语言说明本次查询的业务意图。'),
-    plan: z.any().describe('结构化的查询计划 (QueryPlan)'),
+    plan: queryPlanSchema.describe('结构化的查询计划 (QueryPlan)'),
   }),
   execute: async ({ plan, explanation }) => {
     const projectName = process.env.CURRENT_PROJECT || 'default';

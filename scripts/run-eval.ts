@@ -40,10 +40,11 @@ async function runEval() {
 
         step.toolCalls?.forEach(call => {
           const args = (call as any).input || (call as any).args;
+          console.log(`[DEBUG] Tool called: ${call.toolName}`, JSON.stringify(args, null, 2));
           if (call.toolName === 'executeQuery') {
             if (args) generatedSql = args.sql;
           }
-          if (call.toolName === 'semanticQuery') {
+          if (call.toolName === 'semanticQuery' || call.toolName === 'previewQueryPlan') {
             if (args && args.plan) {
               // 标记使用了语义查询
               generatedSql += ` [semanticQuery: ${JSON.stringify(args.plan)}]`;
@@ -56,9 +57,13 @@ async function runEval() {
 
         step.toolResults?.forEach(result => {
           const res = (result as any).output || (result as any).result;
-          // 如果是 semanticQuery，尝试从审计信息中提取生成的 SQL 用于校验
-          if (result.toolName === 'semanticQuery' && res && (res as any).audit) {
-            generatedSql = (res as any).audit.sql;
+          // 尝试从审计信息或直接结果中提取生成的 SQL 用于校验
+          if ((result.toolName === 'semanticQuery' || result.toolName === 'previewQueryPlan') && res) {
+            if ((res as any).audit && (res as any).audit.sql) {
+              generatedSql = (res as any).audit.sql;
+            } else if ((res as any).sql) {
+              generatedSql = (res as any).sql;
+            }
           }
 
           if (res && (res as any).error) {

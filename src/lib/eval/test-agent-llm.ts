@@ -55,8 +55,9 @@ async function testLLM() {
         console.log(`  Args: ${JSON.stringify(tc.args, null, 2)}`);
 
         // 处理过滤器
-        if (tc.args.plan && tc.args.plan.filters) {
-          tc.args.plan.filters.forEach((f: any) => {
+        const args = tc.args as any;
+        if (args.plan && args.plan.filters) {
+          args.plan.filters.forEach((f: any) => {
             const dim = semanticLayer.dimensions[f.field];
             const actualField = dim ? dim.column : f.field;
             console.log(`  Filter Applied: ${actualField} ${f.operator} ${f.value}`);
@@ -66,7 +67,7 @@ async function testLLM() {
 
       
       step.toolResults.forEach(tr => {
-        const result = tr.result as any;
+        const result = (tr as any).result;
         if (!result) {
           console.log(`  Result: (null/undefined)`);
           return;
