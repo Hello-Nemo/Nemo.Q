@@ -14,9 +14,18 @@ export async function POST(req: Request) {
       });
     }
 
+    const runtimeContext = `
+<RUNTIME_CONTEXT>
+- Current Time: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+</RUNTIME_CONTEXT>
+`;
+
     return await createAgentUIStreamResponse({
       agent: dataAgent,
-      uiMessages: messages,
+      uiMessages: [
+        { role: 'system', content: runtimeContext },
+        ...messages
+      ],
     });
   } catch (error: any) {
     console.error('[CHAT_API_ERROR]', error);

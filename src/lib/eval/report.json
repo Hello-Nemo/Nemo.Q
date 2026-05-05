@@ -1,42 +1,88 @@
 {
-  "timestamp": "2026-05-04T03:25:03.610Z",
-  "averageScore": 0,
+  "timestamp": "2026-05-05T13:58:27.422Z",
+  "averageScore": 77.85714285714286,
   "results": [
     {
       "id": "q1",
       "question": "列出所有来自中国的用户",
-      "score": 0,
-      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+      "score": 105,
+      "reasons": [
+        "成功生成 SQL",
+        "SQL 执行成功",
+        "关键口径匹配",
+        "主动进行了数据采样"
+      ],
+      "generatedSql": "SELECT id, username, email, country, joined_at FROM users WHERE country = '中国' ORDER BY id"
     },
     {
       "id": "q2",
       "question": "计算上个月的总销售额",
-      "score": 0,
-      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+      "score": 75,
+      "reasons": [
+        "成功生成 SQL",
+        "SQL 执行成功",
+        "关键口径缺失",
+        "主动进行了数据采样"
+      ],
+      "generatedSql": "SELECT \n    MIN(order_date) AS 最早订单日期,\n    MAX(order_date) AS 最晚订单日期,\n    CURRENT_DATE AS 系统当前日期\nFROM orders"
     },
     {
       "id": "q3",
       "question": "找出购买过 Electronics 类产品次数最多的前 3 名用户",
-      "score": 0,
-      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+      "score": 105,
+      "reasons": [
+        "成功生成 SQL",
+        "SQL 执行成功",
+        "关键口径匹配",
+        "主动进行了数据采样"
+      ],
+      "generatedSql": "SELECT users.username AS username, COUNT(orders.id) AS order_count FROM orders JOIN users ON users.id = orders.user_id JOIN products ON products.id = orders.product_id WHERE products.category = '电子产品' GROUP BY 1 ORDER BY order_count desc LIMIT 3"
     },
     {
       "id": "p2-aov",
       "question": "我想看下各个国家的客单价 (AOV) 是多少？",
-      "score": 0,
-      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+      "score": 70,
+      "reasons": [
+        "成功生成 SQL",
+        "SQL 执行成功",
+        "关键口径缺失"
+      ],
+      "generatedSql": "SELECT users.country AS user_country, \n       (SUM(orders.total_price)) / (COUNT(orders.id)) AS aov\nFROM orders \nJOIN users ON users.id = orders.user_id \nGROUP BY 1\nORDER BY aov DESC"
     },
     {
       "id": "p2-age-group",
       "question": "按年龄段 (Age Group) 统计一下最近一个月的订单量。",
-      "score": 0,
-      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+      "score": 45,
+      "reasons": [
+        "成功生成 SQL",
+        "SQL 执行报错",
+        "关键口径缺失",
+        "主动进行了数据采样"
+      ],
+      "generatedSql": "SELECT CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END AS age_group, COUNT(orders.id) AS order_count FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1"
     },
     {
       "id": "p2-mom",
       "question": "对比一下最近一个月和上个月的销售额变化。",
-      "score": 0,
-      "error": "DeepSeek API key API key is missing. Pass it using the 'apiKey' parameter or the DEEPSEEK_API_KEY environment variable."
+      "score": 75,
+      "reasons": [
+        "成功生成 SQL",
+        "SQL 执行成功",
+        "关键口径缺失",
+        "主动进行了数据采样"
+      ],
+      "generatedSql": "SELECT MIN(order_date) AS earliest_date, MAX(order_date) AS latest_date FROM orders;"
+    },
+    {
+      "id": "p2-order-by",
+      "question": "销售额最高的前 3 个国家",
+      "score": 70,
+      "reasons": [
+        "成功生成 SQL",
+        "SQL 执行成功",
+        "关键口径缺失"
+      ],
+      "generatedSql": "SELECT users.country AS user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1 ORDER BY sales_amount desc LIMIT 3"
     }
   ]
 }
