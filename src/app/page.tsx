@@ -371,6 +371,9 @@ export default function ChatPage() {
     </div>
   );
 
+  const getPartArgs = (part: any) => part?.args || part?.input || part?.invocation?.args || {};
+  const getPartOutput = (part: any) => part?.output || part?.result;
+
   const renderPart = (part: DataAgentUIMessage['parts'][number], i: number, parts: DataAgentUIMessage['parts']) => {
     switch (part.type) {
       case 'text':
@@ -397,7 +400,7 @@ export default function ChatPage() {
 
       case 'tool-askClarification': {
         const toolPart = part as any;
-        const args = toolPart.args || toolPart.input || toolPart.invocation?.args || {};
+        const args = getPartArgs(toolPart);
         
         return (
           <div key={`part-clarification-${i}`} className="part-unit flow-part animate-fade-in">
@@ -415,9 +418,10 @@ export default function ChatPage() {
 
       case 'tool-previewQueryPlan': {
         const toolPart = part as any;
-        const args = toolPart.args || toolPart.input || {};
-        const output = toolPart.output as any;
-        const state = toolPart.state || 'unknown';
+        if (!toolPart) return null;
+        const args = getPartArgs(toolPart);
+        const output = getPartOutput(toolPart);
+        const state = toolPart?.state || 'unknown';
         
         // 预览结果可能在 output 中（如果已执行）或在 args 中（如果是待确认状态）
         const displayData = output || args;
@@ -431,12 +435,12 @@ export default function ChatPage() {
               </div>
               
               <SqlAudit 
-                sql={displayData.sql} 
-                explanation={displayData.explanation}
-                debugRaw={{ output: { audit: { lineage: displayData.lineage, plan: displayData.plan } } }}
+                sql={displayData?.sql} 
+                explanation={displayData?.explanation}
+                debugRaw={{ output: { audit: { lineage: displayData?.lineage, plan: displayData?.plan } } }}
               />
 
-              {state === 'call' && !output && (
+              {(!output || output?.requires_action) && (
                 <div className="preview-actions">
                   <button 
                     className="confirm-btn soft-surface"
@@ -520,56 +524,42 @@ export default function ChatPage() {
         );
       }
 
+      case 'tool-semanticQuery':
       case 'tool-executeQuery': {
         const toolPart = part as any;
         if (!toolPart) return null;
-
-        const auditData = (toolPart.output as any)?.audit || {};
-        const args = toolPart.input || 
-                     toolPart.args || 
-                     toolPart.invocation?.args || 
-                     toolPart.parameters || 
-                     toolPart.callArgs || 
-                     toolPart.result?.args || 
-                     {};
+        const args = getPartArgs(toolPart);
+        const output = getPartOutput(toolPart);
         
-        const finalSql = auditData.sql || args.sql;
-        const finalExplanation = auditData.explanation || args.explanation;
-        const finalAssumptions = auditData.assumptions || args.assumptions;
+        // 提取审计数据：优先从 output 中获取（如果已执行），否则从 args 中获取（初始调用状态）
+        const auditData = output?.audit || args;
+        const finalExplanation = auditData?.explanation || args?.explanation;
+        const finalAssumptions = auditData?.assumptions || args?.assumptions;
 
-        const state = toolPart.state || 'unknown';
+        const state = toolPart?.state || 'unknown';
 
         return (
-          <div key={`part-query-${i}`} className="part-unit tool-part animate-fade-in">
+          <div key={`part-query-${i}`} className="part-unit flow-part animate-fade-in">
             <div className="component-container">
               <SqlAudit 
-                sql={finalSql} 
+                sql={auditData?.sql || args?.sql} 
                 explanation={finalExplanation} 
                 assumptions={finalAssumptions} 
-                isStreaming={state === 'call' && !toolPart.output} 
+                isStreaming={state === 'call' && !output} 
                 debugRaw={toolPart}
               />
               
-              <div className={`result-drawer ${state === 'output-available' || state === 'output-error' ? 'is-ready' : 'is-loading'}`}>
-                {(toolPart.output as any)?.error || toolPart.errorText ? (
+              <div className={`result-drawer ${output || state === 'output-error' ? 'is-ready' : 'is-loading'}`}>
+                {output?.error || toolPart?.errorText ? (
                   <div className="error-block soft-surface">
-                    <AlertCircle size={18} />
-                    <div className="error-info">
-                      <span className="error-title">工具执行异常</span>
-                      <p className="error-text">{(toolPart.output as any)?.error || toolPart.errorText}</p>
-                    </div>
+                    <AlertCircle size={16} />
+                    <p>{output?.error || toolPart?.errorText}</p>
                   </div>
-                ) : state === 'output-available' ? (
-                  <div className="table-block">
-                    <DataTable
-                      rows={(toolPart.output as any)?.rows || []}
-                      rowCount={(toolPart.output as any)?.rowCount}
-                      onAction={handleAction}
-                    />
-                  </div>
+                ) : output?.rows ? (
+                  <DataTable rows={output.rows} rowCount={output.rowCount} />
                 ) : (
-                  <div className="skeleton-placeholder soft-surface">
-                    <div className="sk-pulse" />
+                  <div className="loading-placeholder">
+                    <div className="shimmer-table" />
                   </div>
                 )}
               </div>
@@ -578,29 +568,64 @@ export default function ChatPage() {
         );
       }
 
+      case 'tool-getSchema':
+      case 'tool-getTableSamples':
+      case 'tool-searchTables':
+      case 'tool-listSemanticAtoms': {
+        const toolPart = part as any;
+        const state = toolPart?.state || 'unknown';
+        if (state === 'result') return null; // 辅助工具的结果通常不需要直接展示在主流中
+        
+        return (
+          <div key={`part-util-${i}`} className="part-unit util-part animate-fade-in">
+            <div className="util-indicator">
+              <Clock size={12} className="spin-slow" />
+              <span>正在分析数据库结构...</span>
+            </div>
+            <style jsx>{`
+              .util-indicator {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 16px;
+                background: rgba(0,0,0,0.03);
+                border-radius: 8px;
+                font-size: 11px;
+                color: var(--text-tertiary);
+                margin: 4px 0;
+              }
+              .spin-slow { animation: spin 3s linear infinite; }
+              @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            `}</style>
+          </div>
+        );
+      }
+
       case 'tool-render_chart': {
         const toolPart = part as any;
         if (!toolPart) return null;
 
-        const output = toolPart.output as any;
-        const state = toolPart.state || 'unknown';
+        const output = getPartOutput(toolPart);
+        const state = toolPart?.state || 'unknown';
 
-        if (state !== 'output-available') return <div key={`part-chart-sk-${i}`} className="skeleton-card soft-surface" />;
+        if (!output) return <div key={`part-chart-sk-${i}`} className="skeleton-card soft-surface" />;
+
         return (
-          <div key={`part-chart-${i}`} className="part-unit chart-part animate-fade-in">
+          <div key={`part-chart-${i}`} className="part-unit flow-part animate-fade-in">
             <div className="component-container">
-              <InsightCard
-                id={toolPart.toolCallId}
+              <InsightCard 
+                id={toolPart?.toolCallId || `chart-${i}`}
                 type="chart"
-                title={output?.title || '图表'}
+                title={output?.title || '分析图表'}
                 description={output?.description}
                 data={output?.data || []}
                 chartType={output?.type === 'bar' ? 'bar' : 'area'}
+                isCertified={output?.audit?.isCertified}
                 audit={output?.audit}
               />
               <div className="action-overlay">
                 <button className="action-pill soft-surface" onClick={() => handlePin({
-                  id: toolPart.toolCallId,
+                  id: toolPart?.toolCallId,
                   type: 'chart',
                   title: output?.title,
                   data: output?.data,
@@ -662,8 +687,8 @@ export default function ChatPage() {
                       <div className="turn-body">
                         {(() => {
                           const parts = message.parts as DataAgentUIMessage['parts'];
-                          const clarificationIdx = parts.findIndex(p => p.type === 'tool-askClarification');
-                          const renderedParts = clarificationIdx !== -1 ? parts.slice(0, clarificationIdx + 1) : parts;
+                          const stopIdx = parts.findIndex(p => p.type === 'tool-askClarification' || p.type === 'tool-previewQueryPlan');
+                          const renderedParts = stopIdx !== -1 ? parts.slice(0, stopIdx + 1) : parts;
                           
                           return renderedParts.map((part, i, all) =>
                             renderPart(part, i, all)

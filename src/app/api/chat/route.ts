@@ -20,11 +20,21 @@ export async function POST(req: Request) {
 </RUNTIME_CONTEXT>
 `;
 
+    const cleanMessages = messages.map((m: any, idx: number) => ({
+      id: m.id || `m-${idx}-${Date.now()}`,
+      role: m.role,
+      parts: Array.isArray(m.parts) ? m.parts : [{ type: 'text', text: m.content || '' }]
+    })).filter((m: any) => m.role && m.parts.length > 0);
+
     return await createAgentUIStreamResponse({
       agent: dataAgent,
       uiMessages: [
-        { role: 'system', content: runtimeContext },
-        ...messages
+        { 
+          id: `sys-${Date.now()}`,
+          role: 'system', 
+          parts: [{ type: 'text', text: runtimeContext }] 
+        },
+        ...cleanMessages
       ],
     });
   } catch (error: any) {
