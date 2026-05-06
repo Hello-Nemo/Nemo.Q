@@ -27,6 +27,15 @@ CREATE TABLE orders (
     order_date DATE DEFAULT CURRENT_DATE
 );
 
+-- 创建退货表
+CREATE TABLE returns (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    order_id INT REFERENCES orders(id),
+    amount DECIMAL(10, 2) NOT NULL,
+    return_date DATE DEFAULT CURRENT_DATE
+);
+
 -- 插入产品数据
 INSERT INTO products (name, category, price, stock) VALUES
 ('iPhone 15 Pro', '电子产品', 7999.00, 50),
@@ -54,3 +63,9 @@ INSERT INTO orders (user_id, product_id, quantity, total_price, order_date) VALU
 (5, 1, 1, 7999.00, '2024-04-20'),
 (5, 6, 2, 1798.00, '2024-04-22'),
 (1, 2, 1, 8499.00, '2024-04-25');
+
+-- 插入退货数据
+INSERT INTO returns (user_id, order_id, amount, return_date) VALUES
+(1, 2, 2499.00, '2024-04-08'),
+(4, 5, 599.00, '2024-04-18'),
+(5, 7, 899.00, '2024-04-28');

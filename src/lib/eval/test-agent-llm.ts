@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import { deepseek } from '@ai-sdk/deepseek';
 import { dbTools } from '../tools/db';
 import { chartTools } from '../tools/chart';
@@ -21,7 +21,7 @@ async function testLLM() {
     const response = await generateText({
       model: deepseek('deepseek-chat'),
       tools: { semanticQuery: dbTools.semanticQuery }, // 仅提供 semanticQuery 强制使用
-      maxSteps: 5,
+      stopWhen: stepCountIs(5),
 
       system: `你是一个顶级的数据分析专家。
       
@@ -51,11 +51,12 @@ async function testLLM() {
     response.steps.forEach((step, i) => {
       console.log(`\n[Step ${i + 1}]`);
       step.toolCalls.forEach(tc => {
+        const input = (tc as any).input;
         console.log(`  Tool: ${tc.toolName}`);
-        console.log(`  Args: ${JSON.stringify(tc.args, null, 2)}`);
+        console.log(`  Args: ${JSON.stringify(input, null, 2)}`);
 
         // 处理过滤器
-        const args = tc.args as any;
+        const args = input as any;
         if (args.plan && args.plan.filters) {
           args.plan.filters.forEach((f: any) => {
             const dim = semanticLayer.dimensions[f.field];

@@ -9,6 +9,7 @@ interface TestCase {
   question: string;
   gold_sql: string;
   criteria: string;
+  expectedBehavior?: 'sql' | 'semantic_gap';
 }
 
 async function runEval() {
@@ -30,8 +31,13 @@ async function runEval() {
 
       // 提取生成的 SQL
       let generatedSql = '';
+      let semanticTrace = '';
       let hasError = false;
       let usedSampling = false;
+      let executedSql = false;
+      let usedClarification = false;
+      let usedSemanticAtoms = false;
+      let hasSemanticGap = false;
       const stepSummary: string[] = [];
 
       steps.forEach((step, idx) => {
@@ -43,13 +49,16 @@ async function runEval() {
           console.log(`[DEBUG] Tool called: ${call.toolName}`, JSON.stringify(args, null, 2));
           if (call.toolName === 'executeQuery') {
             if (args) generatedSql = args.sql;
+            executedSql = true;
           }
           if (call.toolName === 'semanticQuery' || call.toolName === 'previewQueryPlan') {
             if (args && args.plan) {
-              // 标记使用了语义查询
-              generatedSql += ` [semanticQuery: ${JSON.stringify(args.plan)}]`;
+              // 标记使用了语义查询，但不要把 QueryPlan 当成已生成/已执行 SQL。
+              semanticTrace += ` [${call.toolName}: ${JSON.stringify(args.plan)}]`;
             }
           }
+          if (call.toolName === 'askClarification') usedClarification = true;
+          if (call.toolName === 'listSemanticAtoms') usedSemanticAtoms = true;
           if (call.toolName === 'getTableSamples') {
             usedSampling = true;
           }
@@ -57,12 +66,22 @@ async function runEval() {
 
         step.toolResults?.forEach(result => {
           const res = (result as any).output || (result as any).result;
+          if (result.toolName === 'askClarification') usedClarification = true;
+          if (result.toolName === 'listSemanticAtoms') usedSemanticAtoms = true;
+
           // 尝试从审计信息或直接结果中提取生成的 SQL 用于校验
           if ((result.toolName === 'semanticQuery' || result.toolName === 'previewQueryPlan') && res) {
             if ((res as any).audit && (res as any).audit.sql) {
               generatedSql = (res as any).audit.sql;
+              executedSql = result.toolName === 'semanticQuery' || executedSql;
             } else if ((res as any).sql) {
               generatedSql = (res as any).sql;
+            }
+            if (
+              (res as any).code === 'SEMANTIC_COMPILATION_FAILED' ||
+              /未知(指标|维度|过滤字段)|语义层未覆盖/.test(JSON.stringify(res))
+            ) {
+              hasSemanticGap = true;
             }
           }
 
@@ -78,35 +97,69 @@ async function runEval() {
       // 评分逻辑 (简单启发式)
       let score = 0;
       const reasons = [];
+      const expectedBehavior = testCase.expectedBehavior || 'sql';
+      const outputText = String(output || '');
+      const evaluationText = [
+        generatedSql,
+        semanticTrace,
+        stepSummary.join(' '),
+        outputText
+      ].join(' ');
+      const criteriaParts = testCase.criteria.split('|');
+      const matchesCriteria = criteriaParts.every(part => {
+        // 如果 part 包含 / 则视为可选 (OR)
+        const subParts = part.split('/');
+        return subParts.some(sp => evaluationText.toLowerCase().includes(sp.toLowerCase()));
+      });
 
-      if (generatedSql) {
-        score += 40;
-        reasons.push('成功生成 SQL');
-      } else {
-        reasons.push('未生成 SQL');
-      }
-
-      if (generatedSql && !hasError) {
-        score += 30;
-        reasons.push('SQL 执行成功');
-      } else if (hasError) {
-        reasons.push('SQL 执行报错');
-      }
-
-      // 关键字匹配校验
-      if (generatedSql) {
-        const criteriaParts = testCase.criteria.split('|');
-        const matches = criteriaParts.every(part => {
-          // 如果 part 包含 / 则视为可选 (OR)
-          const subParts = part.split('/');
-          return subParts.some(sp => generatedSql.toLowerCase().includes(sp.toLowerCase()));
-        });
-
-        if (matches) {
-          score += 30;
-          reasons.push('关键口径匹配');
+      if (expectedBehavior === 'semantic_gap') {
+        if (!executedSql) {
+          score += 40;
+          reasons.push('未执行 SQL');
         } else {
-          reasons.push('关键口径缺失');
+          reasons.push('错误执行了 SQL');
+        }
+
+        if (
+          hasSemanticGap ||
+          usedClarification ||
+          /语义层未覆盖|未知指标|澄清|不存在|未定义/.test(outputText)
+        ) {
+          score += 40;
+          reasons.push('触发语义层缺口处理');
+        } else {
+          reasons.push('未触发语义层缺口处理');
+        }
+
+        if (matchesCriteria) {
+          score += 20;
+          reasons.push('负向口径匹配');
+        } else {
+          reasons.push('负向口径缺失');
+        }
+      } else {
+        if (generatedSql) {
+          score += 40;
+          reasons.push('成功生成 SQL');
+        } else {
+          reasons.push('未生成 SQL');
+        }
+
+        if (generatedSql && !hasError) {
+          score += 30;
+          reasons.push('SQL 执行成功');
+        } else if (hasError) {
+          reasons.push('SQL 执行报错');
+        }
+
+        // 关键字匹配校验
+        if (evaluationText.trim()) {
+          if (matchesCriteria) {
+            score += 30;
+            reasons.push('关键口径匹配');
+          } else {
+            reasons.push('关键口径缺失');
+          }
         }
       }
 
@@ -115,13 +168,19 @@ async function runEval() {
         reasons.push('主动进行了数据采样');
       }
 
+      score = Math.min(score, 100);
       totalScore += score;
       results.push({
         id: testCase.id,
         question: testCase.question,
         score,
         reasons,
-        generatedSql
+        generatedSql,
+        semanticTrace,
+        executedSql,
+        usedClarification,
+        usedSemanticAtoms,
+        hasSemanticGap
       });
 
       console.log(`   - 步骤: ${stepSummary.join(' -> ')}`);

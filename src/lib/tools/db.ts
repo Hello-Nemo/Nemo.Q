@@ -32,6 +32,16 @@ const getDataSource = (): IDataSource => {
   return new PostgresDataSource(dbUrl, semanticLayer);
 };
 
+const buildSemanticCompilationError = (message: string) => ({
+  error: `语义查询编译失败: ${message}`,
+  code: 'SEMANTIC_COMPILATION_FAILED',
+  reason: 'SEMANTIC_ATOM_NOT_FOUND',
+  executedSql: false,
+  hint: '请调用 listSemanticAtoms 查看当前可用的指标和维度；如果用户所需口径不在语义层中，请调用 askClarification 让用户选择替代口径或说明语义层未覆盖。',
+  recoveryActions: ['listSemanticAtoms', 'askClarification'],
+  details: { message }
+});
+
 /**
  * 获取数据库所有表的元数据
  */
@@ -234,7 +244,7 @@ export const semanticQuery = tool({
         await ds.close();
       }
     } catch (e: any) {
-      return { error: `语义查询编译失败: ${e.message}` };
+      return buildSemanticCompilationError(e.message);
     }
   },
 });
@@ -262,7 +272,10 @@ export const previewQueryPlan = tool({
         preview: true
       };
     } catch (e: any) {
-      return { error: `计划生成失败: ${e.message}` };
+      return {
+        ...buildSemanticCompilationError(e.message),
+        error: `计划生成失败: ${e.message}`,
+      };
     }
   },
 });
@@ -277,5 +290,4 @@ export const dbTools = {
   previewQueryPlan,
   listSemanticAtoms,
 };
-
 

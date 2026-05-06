@@ -5,28 +5,32 @@
       "table": "users",
       "primaryKey": "id",
       "description": "用户信息",
-      "type": "dimension"
+      "type": "dimension",
+      "defaultTimeColumn": "users.joined_at"
     },
     "products": {
       "id": "products",
       "table": "products",
       "primaryKey": "id",
       "description": "产品信息",
-      "type": "dimension"
+      "type": "dimension",
+      "defaultTimeColumn": "products.created_at"
     },
     "orders": {
       "id": "orders",
       "table": "orders",
       "primaryKey": "id",
       "description": "订单交易信息",
-      "type": "fact"
+      "type": "fact",
+      "defaultTimeColumn": "orders.order_date"
     },
     "returns": {
       "id": "returns",
       "table": "returns",
       "primaryKey": "id",
       "description": "退货信息",
-      "type": "fact"
+      "type": "fact",
+      "defaultTimeColumn": "returns.return_date"
     }
 
 
@@ -37,28 +41,32 @@
       "name": "销售额",
       "expression": "SUM(orders.total_price)",
       "description": "所有订单的总金额",
-      "entityId": "orders"
+      "entityId": "orders",
+      "timeColumn": "orders.order_date"
     },
     "order_count": {
       "id": "order_count",
       "name": "订单量",
       "expression": "COUNT(orders.id)",
       "description": "总订单数",
-      "entityId": "orders"
+      "entityId": "orders",
+      "timeColumn": "orders.order_date"
     },
     "user_count": {
       "id": "user_count",
       "name": "用户数",
       "expression": "COUNT(DISTINCT users.id)",
       "description": "注册用户总数",
-      "entityId": "users"
+      "entityId": "users",
+      "timeColumn": "users.joined_at"
     },
     "return_amount": {
       "id": "return_amount",
       "name": "退货金额",
       "expression": "SUM(returns.amount)",
       "description": "总退货金额",
-      "entityId": "returns"
+      "entityId": "returns",
+      "timeColumn": "returns.return_date"
     },
     "aov": {
       "id": "aov",
@@ -66,6 +74,7 @@
       "expression": "SUM(orders.total_price) / NULLIF(COUNT(orders.id), 0)",
       "description": "平均订单金额",
       "entityId": "orders",
+      "timeColumn": "orders.order_date",
       "formula": "{{sales_amount}} / {{order_count}}"
     }
 
@@ -101,6 +110,13 @@
       "column": "orders.order_date",
       "description": "下单的时间日期",
       "entityId": "orders"
+    },
+    "return_date": {
+      "id": "return_date",
+      "name": "退货日期",
+      "column": "returns.return_date",
+      "description": "退货发生日期",
+      "entityId": "returns"
     },
     "username": {
       "id": "username",

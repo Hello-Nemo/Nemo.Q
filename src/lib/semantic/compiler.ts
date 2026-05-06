@@ -116,8 +116,9 @@ export class SQLCompiler {
   }
 
   compile(plan: QueryPlan): CompilationResult {
-    const metrics = plan.metrics.map(m => this.semanticLayer.metrics[m.id]).filter(Boolean);
-    const dimensions = plan.dimensions.map(d => this.semanticLayer.dimensions[d.id]).filter(Boolean);
+    const metrics = this.resolveMetrics(plan);
+    const dimensions = this.resolveDimensions(plan);
+    this.validateFilters(plan);
 
     // 1. 处理时间智能（同环比对比）
     if (plan.comparison && plan.timeRange) {
@@ -138,6 +139,34 @@ export class SQLCompiler {
     } else {
       return this.compileSinglePass(plan, metrics, dimensions);
     }
+  }
+
+  private resolveMetrics(plan: QueryPlan): Metric[] {
+    return plan.metrics.map(m => {
+      const metric = this.semanticLayer.metrics[m.id];
+      if (!metric) {
+        throw new Error(`未知指标: ${m.id}`);
+      }
+      return metric;
+    });
+  }
+
+  private resolveDimensions(plan: QueryPlan): Dimension[] {
+    return plan.dimensions.map(d => {
+      const dimension = this.semanticLayer.dimensions[d.id];
+      if (!dimension) {
+        throw new Error(`未知维度: ${d.id}`);
+      }
+      return dimension;
+    });
+  }
+
+  private validateFilters(plan: QueryPlan): void {
+    plan.filters.forEach(f => {
+      if (!this.semanticLayer.dimensions[f.field]) {
+        throw new Error(`未知过滤字段: ${f.field}`);
+      }
+    });
   }
 
   /**
@@ -230,9 +259,10 @@ export class SQLCompiler {
       ];
       
       const joins = this.buildJoinClause(path);
+      const whereClause = this.buildWhereClause(plan, factMetrics);
       const groupBy = ` GROUP BY ${dimensions.map((_, i) => i + 1).join(', ')}`;
       
-      ctes.push(`fact_${index} AS (SELECT ${selectItems.join(', ')} ${joins}${groupBy})`);
+      ctes.push(`fact_${index} AS (SELECT ${selectItems.join(', ')} ${joins}${whereClause}${groupBy})`);
     });
 
     // 2. 将各个事实表的结果基于维度进行对齐缝合
@@ -350,29 +380,148 @@ export class SQLCompiler {
     const conditions: string[] = [];
     
     if (plan.timeRange) {
-      const col = plan.timeRange.column || (metrics[0]?.entityId === 'orders' ? 'orders.order_date' : null);
-      if (col) {
-        if (plan.timeRange.value === 'last_month') {
-          conditions.push(`${col} >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')`);
-          conditions.push(`${col} < DATE_TRUNC('month', CURRENT_DATE)`);
-        } else if (plan.timeRange.value === 'today') {
-          conditions.push(`${col} >= CURRENT_DATE`);
-        }
-      }
+      const col = this.resolveTimeColumn(plan, metrics);
+      conditions.push(...this.buildTimeRangeConditions(col, plan.timeRange));
     }
 
     plan.filters.forEach(f => {
       const dim = this.semanticLayer.dimensions[f.field];
-      const actualField = dim ? dim.column : f.field;
-      let val = f.value;
-      if (f.operator === 'in' && Array.isArray(f.value)) {
-        val = `(${f.value.map(v => typeof v === 'string' ? `'${v}'` : v).join(', ')})`;
-      } else if (typeof f.value === 'string') {
-        val = `'${f.value}'`;
+      const actualField = dim.column;
+      if (f.operator === 'between') {
+        if (!Array.isArray(f.value) || f.value.length !== 2) {
+          throw new Error(`between 过滤器需要两个边界值: ${f.field}`);
+        }
+        conditions.push(`${actualField} BETWEEN ${this.formatLiteral(f.value[0])} AND ${this.formatLiteral(f.value[1])}`);
+        return;
       }
-      conditions.push(`${actualField} ${f.operator} ${val}`);
+
+      if (f.operator === 'in') {
+        if (!Array.isArray(f.value)) {
+          throw new Error(`in 过滤器需要数组值: ${f.field}`);
+        }
+        conditions.push(`${actualField} IN (${f.value.map(v => this.formatLiteral(v)).join(', ')})`);
+        return;
+      }
+
+      conditions.push(`${actualField} ${f.operator} ${this.formatLiteral(f.value)}`);
     });
 
     return conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  }
+
+  private resolveTimeColumn(plan: QueryPlan, metrics: Metric[]): string {
+    if (!plan.timeRange) {
+      throw new Error('缺少 timeRange，无法解析时间字段');
+    }
+
+    if (plan.timeRange.column) {
+      const dimension = this.semanticLayer.dimensions[plan.timeRange.column];
+      return dimension?.column || plan.timeRange.column;
+    }
+
+    const candidateColumns = metrics
+      .map(metric => {
+        const entity = this.semanticLayer.entities[metric.entityId];
+        return metric.timeColumn || entity?.defaultTimeColumn;
+      })
+      .filter((column): column is string => Boolean(column));
+
+    const uniqueColumns = Array.from(new Set(candidateColumns));
+
+    if (uniqueColumns.length === 1) {
+      return uniqueColumns[0];
+    }
+
+    if (uniqueColumns.length > 1) {
+      throw new Error(
+        `无法确定 timeRange 时间字段: 涉及多个候选字段 ${uniqueColumns.join(', ')}，请在 plan.timeRange.column 中指定。`
+      );
+    }
+
+    throw new Error(
+      '无法确定 timeRange 时间字段: 请在 plan.timeRange.column、metric.timeColumn 或 entity.defaultTimeColumn 中指定。'
+    );
+  }
+
+  private buildTimeRangeConditions(
+    column: string,
+    timeRange: NonNullable<QueryPlan['timeRange']>
+  ): string[] {
+    if (timeRange.type === 'absolute') {
+      if (timeRange.start && timeRange.end) {
+        return [`${column} BETWEEN ${this.formatDateLiteral(timeRange.start)} AND ${this.formatDateLiteral(timeRange.end)}`];
+      }
+      if (timeRange.start) {
+        return [`${column} >= ${this.formatDateLiteral(timeRange.start)}`];
+      }
+      if (timeRange.end) {
+        return [`${column} <= ${this.formatDateLiteral(timeRange.end)}`];
+      }
+      throw new Error('absolute timeRange 需要提供 start 或 end');
+    }
+
+    switch (timeRange.value) {
+      case 'today':
+        return [
+          `${column} >= CURRENT_DATE`,
+          `${column} < CURRENT_DATE + INTERVAL '1 day'`
+        ];
+      case 'yesterday':
+        return [
+          `${column} >= CURRENT_DATE - INTERVAL '1 day'`,
+          `${column} < CURRENT_DATE`
+        ];
+      case 'last_7_days':
+        return [
+          `${column} >= CURRENT_DATE - INTERVAL '7 days'`,
+          `${column} < CURRENT_DATE + INTERVAL '1 day'`
+        ];
+      case 'last_30_days':
+        return [
+          `${column} >= CURRENT_DATE - INTERVAL '30 days'`,
+          `${column} < CURRENT_DATE + INTERVAL '1 day'`
+        ];
+      case 'this_month':
+        return [
+          `${column} >= DATE_TRUNC('month', CURRENT_DATE)`,
+          `${column} < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'`
+        ];
+      case 'last_month':
+        return [
+          `${column} >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')`,
+          `${column} < DATE_TRUNC('month', CURRENT_DATE)`
+        ];
+      case 'this_year':
+        return [
+          `${column} >= DATE_TRUNC('year', CURRENT_DATE)`,
+          `${column} < DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year'`
+        ];
+      default:
+        throw new Error(`不支持的 timeRange preset: ${timeRange.value || '(empty)'}`);
+    }
+  }
+
+  private formatDateLiteral(value: string): string {
+    return `DATE '${this.escapeSqlString(value)}'`;
+  }
+
+  private formatLiteral(value: unknown): string {
+    if (value === null || value === undefined) {
+      return 'NULL';
+    }
+
+    if (typeof value === 'number' || typeof value === 'bigint') {
+      return String(value);
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? 'TRUE' : 'FALSE';
+    }
+
+    return `'${this.escapeSqlString(String(value))}'`;
+  }
+
+  private escapeSqlString(value: string): string {
+    return value.replace(/'/g, "''");
   }
 }

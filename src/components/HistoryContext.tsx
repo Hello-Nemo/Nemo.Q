@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { luminaStorage, ChatSession } from '@/lib/db';
-import { v4 as uuidv4 } from 'uuid';
 
 interface HistoryContextType {
   sessions: ChatSession[];

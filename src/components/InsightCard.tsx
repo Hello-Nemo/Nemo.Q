@@ -154,11 +154,12 @@ export default function InsightCard({
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} />
                   <RechartsTooltip
                     content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
+                      const point = payload?.[0];
+                      if (active && point?.payload && point.value != null) {
                         return (
                           <div className="custom-tooltip">
-                            <p className="label">{`${payload[0].payload[xKey]}`}</p>
-                            <p className="value">{`${payload[0].value.toLocaleString()}`}</p>
+                            <p className="label">{`${point.payload[xKey]}`}</p>
+                            <p className="value">{`${point.value.toLocaleString()}`}</p>
                           </div>
                         );
                       }
@@ -189,11 +190,12 @@ export default function InsightCard({
                   <RechartsTooltip
                     cursor={{ fill: 'rgba(99, 102, 241, 0.04)' }}
                     content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
+                      const point = payload?.[0];
+                      if (active && point?.payload && point.value != null) {
                         return (
                           <div className="custom-tooltip">
-                            <p className="label">{`${payload[0].payload[xKey]}`}</p>
-                            <p className="value">{`${payload[0].value.toLocaleString()}`}</p>
+                            <p className="label">{`${point.payload[xKey]}`}</p>
+                            <p className="value">{`${point.value.toLocaleString()}`}</p>
                           </div>
                         );
                       }

@@ -54,5 +54,38 @@
     "question": "销售额最高的前 3 个国家",
     "gold_sql": "SELECT ... ORDER BY sales_amount DESC LIMIT 3",
     "criteria": "ORDER BY|DESC|LIMIT|3|semanticQuery"
+  },
+  {
+    "id": "p1-last-7-days-sales",
+    "category": "Phase 1: 时间范围编译",
+    "difficulty": "medium",
+    "question": "最近 7 天销售额",
+    "gold_sql": "SELECT SUM(orders.total_price) FROM orders WHERE orders.order_date >= CURRENT_DATE - INTERVAL '7 days'",
+    "criteria": "sales_amount|last_7_days/order_date|semanticQuery"
+  },
+  {
+    "id": "p1-absolute-order-count",
+    "category": "Phase 1: 时间范围编译",
+    "difficulty": "medium",
+    "question": "2025-01-01 到 2025-01-31 的订单量",
+    "gold_sql": "SELECT COUNT(orders.id) FROM orders WHERE orders.order_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31'",
+    "criteria": "order_count|2025-01-01|2025-01-31|semanticQuery"
+  },
+  {
+    "id": "p1-last-month-return-amount",
+    "category": "Phase 1: 时间范围编译",
+    "difficulty": "hard",
+    "question": "上个月退货金额",
+    "gold_sql": "SELECT SUM(returns.amount) FROM returns WHERE returns.return_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')",
+    "criteria": "return_amount|last_month/returns.return_date/return_date|semanticQuery"
+  },
+  {
+    "id": "p1-unknown-gross-margin",
+    "category": "Phase 1: 语义层硬校验",
+    "difficulty": "hard",
+    "question": "毛利率是多少？",
+    "gold_sql": "N/A - 语义层未定义毛利率指标，应澄清或说明语义层未覆盖",
+    "criteria": "gross_margin/毛利率|语义层未覆盖/未知指标/askClarification/listSemanticAtoms",
+    "expectedBehavior": "semantic_gap"
   }
 ]

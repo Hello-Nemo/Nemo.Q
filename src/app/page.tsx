@@ -22,7 +22,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 
-import type { DataAgentUIMessage } from '@/lib/types';
+import type { DataAgentUIMessage, TimestampedDataAgentUIMessage } from '@/lib/types';
 import WorkbenchLayout from '@/components/WorkbenchLayout';
 import InputArea from '@/components/InputArea';
 import ReasoningBlock from '@/components/ReasoningBlock';
@@ -59,13 +59,13 @@ export default function ChatPage() {
   const isProgrammaticScroll = useRef(false);
 
   // Load initial messages from session if exists
-  const [initialMessages, setInitialMessages] = useState<DataAgentUIMessage[]>([]);
+  const [initialMessages, setInitialMessages] = useState<TimestampedDataAgentUIMessage[]>([]);
   
   useEffect(() => {
     if (currentSessionId) {
       luminaStorage.getSession(currentSessionId).then(session => {
         if (session) {
-          setInitialMessages(session.messages);
+          setInitialMessages(session.messages as TimestampedDataAgentUIMessage[]);
         } else {
           setInitialMessages([]);
         }
@@ -78,9 +78,9 @@ export default function ChatPage() {
 
   const transport = useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
 
-  const { messages, sendMessage, status, stop, error, setMessages } = useChat<DataAgentUIMessage>({
+  const { messages, sendMessage, status, stop, error, setMessages } = useChat<TimestampedDataAgentUIMessage>({
     id: currentSessionId || 'new-session',
-    initialMessages: initialMessages,
+    messages: initialMessages,
     transport,
     experimental_throttle: 50,
     onFinish: (message) => {
@@ -97,7 +97,7 @@ export default function ChatPage() {
   // Effect to handle multi-session switching and initial load
   const lastLoadedSessionId = useRef<string | null>(null);
   useEffect(() => {
-    if (currentSessionId !== lastLoadedSessionId.current && initialMessages.length > 0 && status === 'ready') {
+    if (currentSessionId !== lastLoadedSessionId.current && status === 'ready') {
       setMessages(initialMessages);
       lastLoadedSessionId.current = currentSessionId;
     }

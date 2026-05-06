@@ -116,8 +116,9 @@ export class PostgresDataSource implements IDataSource {
       // 先尝试 TABLESAMPLE，如果失败（如表太小或不支持）则回退到普通 LIMIT
       try {
         const res = await client.query(`SELECT * FROM ${tableName} TABLESAMPLE SYSTEM (1) LIMIT 5`);
-        if (res.rowCount > 0) {
-          return { rowCount: res.rowCount, rows: res.rows };
+        const rowCount = res.rowCount ?? 0;
+        if (rowCount > 0) {
+          return { rowCount, rows: res.rows };
         }
       } catch (e) {
         // 回退逻辑

@@ -1,18 +1,23 @@
 {
-  "timestamp": "2026-05-05T13:58:27.422Z",
-  "averageScore": 77.85714285714286,
+  "timestamp": "2026-05-06T14:06:15.553Z",
+  "averageScore": 83.125,
   "results": [
     {
       "id": "q1",
       "question": "列出所有来自中国的用户",
-      "score": 105,
+      "score": 100,
       "reasons": [
         "成功生成 SQL",
         "SQL 执行成功",
         "关键口径匹配",
         "主动进行了数据采样"
       ],
-      "generatedSql": "SELECT id, username, email, country, joined_at FROM users WHERE country = '中国' ORDER BY id"
+      "generatedSql": "SELECT id, username, email, country, joined_at FROM users WHERE country = '中国' ORDER BY id;",
+      "semanticTrace": "",
+      "executedSql": true,
+      "usedClarification": false,
+      "usedSemanticAtoms": true,
+      "hasSemanticGap": false
     },
     {
       "id": "q2",
@@ -20,23 +25,32 @@
       "score": 75,
       "reasons": [
         "成功生成 SQL",
-        "SQL 执行成功",
-        "关键口径缺失",
+        "SQL 执行报错",
+        "关键口径匹配",
         "主动进行了数据采样"
       ],
-      "generatedSql": "SELECT \n    MIN(order_date) AS 最早订单日期,\n    MAX(order_date) AS 最晚订单日期,\n    CURRENT_DATE AS 系统当前日期\nFROM orders"
+      "generatedSql": "SELECT TO_CHAR(\"order_date\", 'YYYY-MM') AS month, \n       SUM(total_price) AS sales_amount, \n       COUNT(*) AS order_count\nFROM orders\nGROUP BY TO_CHAR(\"order_date\", 'YYYY-MM')\nORDER BY month",
+      "semanticTrace": " [semanticQuery: {\"intent\":\"metric_query\",\"metrics\":[{\"id\":\"sales_amount\"}],\"dimensions\":[],\"timeRange\":{\"type\":\"preset\",\"value\":\"last_month\",\"column\":\"order_date\"},\"filters\":[]}]",
+      "executedSql": true,
+      "usedClarification": false,
+      "usedSemanticAtoms": false,
+      "hasSemanticGap": false
     },
     {
       "id": "q3",
       "question": "找出购买过 Electronics 类产品次数最多的前 3 名用户",
-      "score": 105,
+      "score": 100,
       "reasons": [
         "成功生成 SQL",
         "SQL 执行成功",
-        "关键口径匹配",
-        "主动进行了数据采样"
+        "关键口径匹配"
       ],
-      "generatedSql": "SELECT users.username AS username, COUNT(orders.id) AS order_count FROM orders JOIN users ON users.id = orders.user_id JOIN products ON products.id = orders.product_id WHERE products.category = '电子产品' GROUP BY 1 ORDER BY order_count desc LIMIT 3"
+      "generatedSql": "SELECT users.username AS username, COUNT(orders.id) AS order_count FROM orders JOIN users ON users.id = orders.user_id JOIN products ON products.id = orders.product_id WHERE products.category = 'Electronics' GROUP BY 1 ORDER BY order_count desc LIMIT 3",
+      "semanticTrace": " [previewQueryPlan: {\"intent\":\"metric_query\",\"metrics\":[{\"id\":\"order_count\"}],\"dimensions\":[{\"id\":\"username\"}],\"filters\":[{\"field\":\"product_category\",\"operator\":\"=\",\"value\":\"Electronics\"}],\"orderBy\":[{\"field\":\"order_count\",\"direction\":\"desc\"}],\"limit\":3}]",
+      "executedSql": false,
+      "usedClarification": false,
+      "usedSemanticAtoms": true,
+      "hasSemanticGap": false
     },
     {
       "id": "p2-aov",
@@ -47,19 +61,29 @@
         "SQL 执行成功",
         "关键口径缺失"
       ],
-      "generatedSql": "SELECT users.country AS user_country, \n       (SUM(orders.total_price)) / (COUNT(orders.id)) AS aov\nFROM orders \nJOIN users ON users.id = orders.user_id \nGROUP BY 1\nORDER BY aov DESC"
+      "generatedSql": "SELECT users.country AS user_country, (SUM(orders.total_price)) / (COUNT(orders.id)) AS aov FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1",
+      "semanticTrace": " [previewQueryPlan: {\"intent\":\"metric_query\",\"metrics\":[{\"id\":\"aov\"}],\"dimensions\":[{\"id\":\"user_country\"}],\"filters\":[]}]",
+      "executedSql": false,
+      "usedClarification": false,
+      "usedSemanticAtoms": true,
+      "hasSemanticGap": false
     },
     {
       "id": "p2-age-group",
       "question": "按年龄段 (Age Group) 统计一下最近一个月的订单量。",
-      "score": 45,
+      "score": 75,
       "reasons": [
         "成功生成 SQL",
-        "SQL 执行报错",
+        "SQL 执行成功",
         "关键口径缺失",
         "主动进行了数据采样"
       ],
-      "generatedSql": "SELECT CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END AS age_group, COUNT(orders.id) AS order_count FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1"
+      "generatedSql": "SELECT MIN(order_date) AS min_date, MAX(order_date) AS max_date FROM orders",
+      "semanticTrace": " [previewQueryPlan: {\"intent\":\"metric_query\",\"metrics\":[{\"id\":\"order_count\"}],\"dimensions\":[{\"id\":\"age_group\"}],\"timeRange\":{\"type\":\"preset\",\"value\":\"last_month\",\"column\":\"orders.order_date\"},\"filters\":[]}]",
+      "executedSql": true,
+      "usedClarification": true,
+      "usedSemanticAtoms": true,
+      "hasSemanticGap": false
     },
     {
       "id": "p2-mom",
@@ -71,7 +95,12 @@
         "关键口径缺失",
         "主动进行了数据采样"
       ],
-      "generatedSql": "SELECT MIN(order_date) AS earliest_date, MAX(order_date) AS latest_date FROM orders;"
+      "generatedSql": "SELECT MIN(order_date) AS min_date, MAX(order_date) AS max_date FROM orders",
+      "semanticTrace": "",
+      "executedSql": true,
+      "usedClarification": true,
+      "usedSemanticAtoms": true,
+      "hasSemanticGap": false
     },
     {
       "id": "p2-order-by",
@@ -82,7 +111,29 @@
         "SQL 执行成功",
         "关键口径缺失"
       ],
-      "generatedSql": "SELECT users.country AS user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1 ORDER BY sales_amount desc LIMIT 3"
+      "generatedSql": "SELECT users.country AS user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1 ORDER BY sales_amount desc LIMIT 3",
+      "semanticTrace": " [previewQueryPlan: {\"intent\":\"metric_query\",\"metrics\":[{\"id\":\"sales_amount\"}],\"dimensions\":[{\"id\":\"user_country\"}],\"filters\":[],\"orderBy\":[{\"field\":\"sales_amount\",\"direction\":\"desc\"}],\"limit\":3}]",
+      "executedSql": false,
+      "usedClarification": false,
+      "usedSemanticAtoms": true,
+      "hasSemanticGap": false
+    },
+    {
+      "id": "p1-unknown-gross-margin",
+      "question": "毛利率是多少？",
+      "score": 100,
+      "reasons": [
+        "未执行 SQL",
+        "触发语义层缺口处理",
+        "负向口径匹配",
+        "主动进行了数据采样"
+      ],
+      "generatedSql": "",
+      "semanticTrace": "",
+      "executedSql": false,
+      "usedClarification": true,
+      "usedSemanticAtoms": true,
+      "hasSemanticGap": false
     }
   ]
 }

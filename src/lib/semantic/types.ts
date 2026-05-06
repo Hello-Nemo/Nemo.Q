@@ -33,6 +33,8 @@ export interface Entity {
   primaryKey: string;
   description: string;
   type: 'fact' | 'dimension';
+  /** 实体默认时间字段；作为 metric.timeColumn 之后的 timeRange 回退。 */
+  defaultTimeColumn?: string;
 }
 
 export interface Relationship {
@@ -109,4 +111,3 @@ export interface CompiledQuery {
   assumptions: string[];
   lineage: Lineage;
 }
-
