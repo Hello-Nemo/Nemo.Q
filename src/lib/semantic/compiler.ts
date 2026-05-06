@@ -260,7 +260,9 @@ export class SQLCompiler {
       
       const joins = this.buildJoinClause(path);
       const whereClause = this.buildWhereClause(plan, factMetrics);
-      const groupBy = ` GROUP BY ${dimensions.map((_, i) => i + 1).join(', ')}`;
+      const groupBy = dimensions.length > 0
+        ? ` GROUP BY ${dimensions.map((_, i) => i + 1).join(', ')}`
+        : '';
       
       ctes.push(`fact_${index} AS (SELECT ${selectItems.join(', ')} ${joins}${whereClause}${groupBy})`);
     });
@@ -276,8 +278,12 @@ export class SQLCompiler {
 
     let finalFrom = `FROM fact_0`;
     for (let i = 1; i < factList.length; i++) {
-      const joinOn = dimensions.map(d => `fact_0.dim_${d.id} = fact_${i}.dim_${d.id}`).join(' AND ');
-      finalFrom += ` FULL OUTER JOIN fact_${i} ON ${joinOn}`;
+      if (dimensions.length === 0) {
+        finalFrom += ` CROSS JOIN fact_${i}`;
+      } else {
+        const joinOn = dimensions.map(d => `fact_0.dim_${d.id} = fact_${i}.dim_${d.id}`).join(' AND ');
+        finalFrom += ` FULL OUTER JOIN fact_${i} ON ${joinOn}`;
+      }
     }
 
     const orderBy = plan.orderBy?.length 
