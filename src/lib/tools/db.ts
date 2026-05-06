@@ -5,6 +5,7 @@ import path from 'path';
 import { PostgresDataSource, IDataSource } from '../db-connector';
 import { SQLCompiler } from '../semantic/compiler';
 import { QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
+import { buildSqlGuardPolicy, guardSql } from '../sql-guard/guard';
 
 
 // 加载语义层配置
@@ -64,7 +65,7 @@ export const getSchema = tool({
  * 执行 SQL 查询
  */
 export const executeQuery = tool({
-  description: '执行生成的 SQL 查询语句并返回结果。仅限 SELECT 语句。',
+  description: '执行生成的探索性 SQL 查询语句并返回结果。仅限通过 SQL Guard 的 SELECT 或 WITH ... SELECT 查询。',
   inputSchema: z.object({
     explanation: z.string().min(10).describe('用自然语言详细说明取数逻辑。必须包含：关联了哪些表、核心过滤条件是什么、为什么要这样取。严禁使用“查询数据”等占位符。'),
     assumptions: z.array(z.string()).min(1).describe('执行此查询时的业务边界假设。例如：["活跃用户定义为30天内有订单","销售额已剔除已取消订单"]。严禁使用占位符。'),
@@ -79,20 +80,53 @@ export const executeQuery = tool({
         error: `违反 SQL_AUDIT_PROTOCOL 强制规范：
 1. explanation 必须详细说明取数逻辑（当前长度: ${explanation?.length || 0}，要求至少 10 字）。
 2. assumptions 必须包含至少一条业务假设。
-请重新生成工具调用，并填充真实的审计证据。严禁使用占位符。` 
+请重新生成工具调用，并填充真实的审计证据。严禁使用占位符。`,
+        code: 'SQL_AUDIT_PROTOCOL_FAILED',
+        executedSql: false,
+        audit: {
+          sql,
+          explanation,
+          assumptions,
+          guardStatus: 'failed'
+        }
       };
     }
 
-    if (!sql.trim().toLowerCase().startsWith('select')) {
-      return { error: '出于安全考虑，目前仅支持执行 SELECT 查询。' };
+    const projectName = process.env.CURRENT_PROJECT || 'default';
+    const semanticLayer = getSemanticLayer(projectName);
+    const guardResult = guardSql(sql, buildSqlGuardPolicy(semanticLayer));
+
+    if (guardResult.guardStatus === 'failed') {
+      return {
+        error: guardResult.message,
+        code: guardResult.code,
+        executedSql: false,
+        hint: 'SQL Guard 已阻止执行。请改写为单条、只读、显式字段、且仅引用语义层授权表字段的 SELECT 查询。',
+        details: guardResult.details,
+        audit: {
+          sql,
+          explanation,
+          assumptions,
+          guardStatus: guardResult.guardStatus,
+          guard: guardResult.audit
+        }
+      };
     }
 
     const ds = getDataSource();
     try {
-      const result = await ds.executeQuery(sql);
+      const result = await ds.executeQuery(guardResult.sql);
       return {
         ...result,
-        audit: { sql, explanation, assumptions }
+        audit: {
+          sql: guardResult.sql,
+          originalSql: guardResult.originalSql,
+          explanation,
+          assumptions,
+          guardStatus: guardResult.guardStatus,
+          guard: guardResult.audit,
+          isCertified: false
+        }
       };
     } catch (e: any) {
       console.error('[ERROR] executeQuery failed:', e);
@@ -104,7 +138,16 @@ export const executeQuery = tool({
 2. SQL 语法错误（如缺少 JOIN 条件或 GROUP BY 字段）。
 3. 业务逻辑冲突（如使用了不存在的过滤值）。
 请根据报错信息修正后重试。`,
-        diagnosis: e.message
+        diagnosis: e.message,
+        audit: {
+          sql: guardResult.sql,
+          originalSql: guardResult.originalSql,
+          explanation,
+          assumptions,
+          guardStatus: guardResult.guardStatus,
+          guard: guardResult.audit,
+          isCertified: false
+        }
       };
     } finally {
       await ds.close();
@@ -290,4 +333,3 @@ export const dbTools = {
   previewQueryPlan,
   listSemanticAtoms,
 };
-
