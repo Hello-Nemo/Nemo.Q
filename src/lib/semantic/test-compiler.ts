@@ -33,6 +33,15 @@ function assertCompileFails(name: string, plan: QueryPlan, expectedMessage: stri
   );
 }
 
+function assertSqlContainsTimes(name: string, sql: string, fragment: string, expectedCount: number) {
+  const count = [...sql.matchAll(new RegExp(fragment, 'g'))].length;
+  assert.equal(
+    count,
+    expectedCount,
+    `${name} should include SQL fragment ${expectedCount} times: ${fragment}`
+  );
+}
+
 async function runTest() {
   assertCompiles(
     'Basic Metric Query',
@@ -213,6 +222,65 @@ async function runTest() {
     multiFactTimeRangeResult.sql,
     /GROUP BY\s*\)/,
     'multi-pass aggregate CTEs without dimensions should not emit an empty GROUP BY'
+  );
+
+  const multiFactByCountryResult = assertCompiles(
+    'Multi-pass timeRange applies per fact CTE with shared dimensions',
+    {
+      intent: 'metric_query',
+      metrics: [{ id: 'sales_amount' }, { id: 'return_amount' }],
+      dimensions: [{ id: 'user_country' }],
+      timeRange: { type: 'preset', value: 'last_month' },
+      filters: []
+    },
+    [
+      'users\\.country AS dim_user_country',
+      "orders\\.order_date >= DATE_TRUNC\\('month', CURRENT_DATE - INTERVAL '1 month'\\)",
+      "returns\\.return_date >= DATE_TRUNC\\('month', CURRENT_DATE - INTERVAL '1 month'\\)",
+      'FULL OUTER JOIN fact_1 ON fact_0\\.dim_user_country = fact_1\\.dim_user_country'
+    ]
+  );
+
+  assertSqlContainsTimes(
+    'Multi-pass timeRange applies per fact CTE with shared dimensions',
+    multiFactByCountryResult.sql,
+    'users\\.country AS dim_user_country',
+    2
+  );
+
+  const multiFactFilterResult = assertCompiles(
+    'Multi-pass filter joins filter entity into each fact CTE',
+    {
+      intent: 'metric_query',
+      metrics: [{ id: 'sales_amount' }, { id: 'return_amount' }],
+      dimensions: [],
+      timeRange: { type: 'preset', value: 'last_30_days' },
+      filters: [{ field: 'username', operator: '=', value: 'alice' }]
+    },
+    [
+      'FROM orders JOIN users ON users\\.id = orders\\.user_id',
+      'FROM returns JOIN users ON users\\.id = returns\\.user_id',
+      "orders\\.order_date >= CURRENT_DATE - INTERVAL '30 days'",
+      "returns\\.return_date >= CURRENT_DATE - INTERVAL '30 days'"
+    ]
+  );
+
+  assertSqlContainsTimes(
+    'Multi-pass filter joins filter entity into each fact CTE',
+    multiFactFilterResult.sql,
+    "users\\.username = 'alice'",
+    2
+  );
+
+  assert.throws(
+    () => compiler.compile({
+      intent: 'metric_query',
+      metrics: [{ id: 'sales_amount' }, { id: 'return_amount' }],
+      dimensions: [],
+      filters: [{ field: 'product_category', operator: '=', value: '电子产品' }]
+    }),
+    (error) => error instanceof Error && /过滤字段不适用于当前 multi-pass CTE: product_category/.test(error.message),
+    'multi-pass should fail explicitly when a filter cannot apply to every fact CTE without crossing another fact'
   );
 
   const noDefaultTimeLayer: SemanticLayer = {

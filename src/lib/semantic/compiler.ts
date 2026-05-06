@@ -241,14 +241,21 @@ export class SQLCompiler {
     const factList = Array.from(factEntities);
     const allRequiredEntities = new Set<string>(factList);
     dimensions.forEach(d => allRequiredEntities.add(d.entityId));
+    const filterDimensions = plan.filters.map(f => this.semanticLayer.dimensions[f.field]);
+    filterDimensions.forEach(d => allRequiredEntities.add(d.entityId));
     
     const combinedPath: string[] = [];
 
     // 1. 为每个事实表生成独立的局部聚合 CTE
     factList.forEach((factId, index) => {
       const factMetrics = metrics.filter(m => m.entityId === factId);
-      const factEntitiesRequired = new Set<string>([factId, ...dimensions.map(d => d.entityId)]);
-      const path = this.pathFinder.findBestPath(factEntitiesRequired);
+      const factEntitiesRequired = new Set<string>([
+        factId,
+        ...dimensions.map(d => d.entityId),
+        ...filterDimensions.map(d => d.entityId)
+      ]);
+      const path = this.findFactScopedPath(factId, factEntitiesRequired, dimensions, plan.filters);
+      const pathEntityIds = new Set(path);
       
       // 合并路径用于 Lineage
       path.forEach(p => { if (!combinedPath.includes(p)) combinedPath.push(p); });
@@ -259,7 +266,7 @@ export class SQLCompiler {
       ];
       
       const joins = this.buildJoinClause(path);
-      const whereClause = this.buildWhereClause(plan, factMetrics);
+      const whereClause = this.buildWhereClause(plan, factMetrics, pathEntityIds);
       const groupBy = dimensions.length > 0
         ? ` GROUP BY ${dimensions.map((_, i) => i + 1).join(', ')}`
         : '';
@@ -304,6 +311,49 @@ export class SQLCompiler {
         type: 'MultiPass'
       }
     };
+  }
+
+  private findFactScopedPath(
+    factId: string,
+    requiredEntityIds: Set<string>,
+    dimensions: Dimension[],
+    filters: QueryPlan['filters']
+  ): string[] {
+    const path = this.pathFinder.findBestPath(requiredEntityIds);
+    const crossingFacts = this.getOtherFactIds(path, factId);
+    if (crossingFacts.length === 0) return path;
+
+    for (const filter of filters) {
+      const dimension = this.semanticLayer.dimensions[filter.field];
+      const filterPath = this.pathFinder.findBestPath(new Set([factId, dimension.entityId]));
+      const filterCrossingFacts = this.getOtherFactIds(filterPath, factId);
+      if (filterCrossingFacts.length > 0) {
+        throw new Error(
+          `过滤字段不适用于当前 multi-pass CTE: ${filter.field} 无法应用于 fact ${factId}，否则会跨事实表 ${filterCrossingFacts.join(', ')}。`
+        );
+      }
+    }
+
+    for (const dimension of dimensions) {
+      const dimensionPath = this.pathFinder.findBestPath(new Set([factId, dimension.entityId]));
+      const dimensionCrossingFacts = this.getOtherFactIds(dimensionPath, factId);
+      if (dimensionCrossingFacts.length > 0) {
+        throw new Error(
+          `维度不适用于当前 multi-pass CTE: ${dimension.id} 无法应用于 fact ${factId}，否则会跨事实表 ${dimensionCrossingFacts.join(', ')}。`
+        );
+      }
+    }
+
+    throw new Error(
+      `无法为 fact ${factId} 生成不跨事实表的 multi-pass CTE 路径: ${path.join(' -> ')}`
+    );
+  }
+
+  private getOtherFactIds(path: string[], factId: string): string[] {
+    return path.filter(entityId => {
+      const entity = this.semanticLayer.entities[entityId];
+      return entityId !== factId && entity?.type === 'fact';
+    });
   }
 
   /**
@@ -382,7 +432,7 @@ export class SQLCompiler {
     return clause;
   }
 
-  private buildWhereClause(plan: QueryPlan, metrics: Metric[]): string {
+  private buildWhereClause(plan: QueryPlan, metrics: Metric[], availableEntityIds?: Set<string>): string {
     const conditions: string[] = [];
     
     if (plan.timeRange) {
@@ -392,6 +442,9 @@ export class SQLCompiler {
 
     plan.filters.forEach(f => {
       const dim = this.semanticLayer.dimensions[f.field];
+      if (availableEntityIds && !availableEntityIds.has(dim.entityId)) {
+        throw new Error(`过滤字段不属于当前 CTE 路径: ${f.field}`);
+      }
       const actualField = dim.column;
       if (f.operator === 'between') {
         if (!Array.isArray(f.value) || f.value.length !== 2) {
