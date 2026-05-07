@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { confirmPreviewedQueryPlan, previewQueryPlan } from './db';
+import { cancelPreviewedQueryPlan, confirmPreviewedQueryPlan, previewQueryPlan } from './db';
 
 const basePlan = {
   intent: 'metric_query' as const,
@@ -72,9 +72,21 @@ async function assertTamperedPlanIsRejectedBeforeExecution() {
   assert.match(result.error, /预览计划与确认计划不一致/);
 }
 
+function assertCancelWithoutPreviewRecordIsRejected() {
+  const result = cancelPreviewedQueryPlan({
+    planId: 'plan_missing_record',
+  });
+
+  assert.equal(result.canceled, false);
+  assert.equal(result.code, 'QUERY_PLAN_NOT_FOUND');
+  assert.equal(result.executedSql, false);
+  assert.match(result.error, /该预览计划不存在或已丢失/);
+}
+
 async function runTest() {
   await assertConfirmUsesPreviewPlan();
   await assertTamperedPlanIsRejectedBeforeExecution();
+  assertCancelWithoutPreviewRecordIsRejected();
 
   console.log('query plan confirmation tests passed.');
 }

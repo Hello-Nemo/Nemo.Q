@@ -195,7 +195,7 @@ export function guardSql(sql: string, policy: SqlGuardPolicy): SqlGuardResult {
 
     const limitApplied = shouldAppendDefaultLimit(statement);
     const guardedSql = limitApplied
-      ? `${stripTrailingSemicolon(normalizedSql)} LIMIT ${policy.defaultLimit}`
+      ? `${stripTrailingSemicolonAndComments(normalizedSql)} LIMIT ${policy.defaultLimit}`
       : stripTrailingSemicolon(normalizedSql);
 
     return {
@@ -286,20 +286,20 @@ function validateSelect(
   const scope: SelectScope = { sources, ctes, outputAliases: selectedAliases };
 
   for (const column of statement.columns ?? []) {
-    validateExpression(column.expr, state, { sources, ctes }, false);
+    validateExpression(column.expr, state, { sources, ctes }, false, false);
   }
 
-  validateExpression(statement.where, state, scope, false);
-  validateExpression(statement.having, state, scope, false);
-  validateExpression(statement.limit?.limit, state, scope, false);
-  validateExpression(statement.limit?.offset, state, scope, false);
+  validateExpression(statement.where, state, scope, false, true);
+  validateExpression(statement.having, state, scope, false, false);
+  validateExpression(statement.limit?.limit, state, scope, false, false);
+  validateExpression(statement.limit?.offset, state, scope, false, false);
 
   for (const groupBy of statement.groupBy ?? []) {
-    validateExpression(groupBy, state, scope, false);
+    validateExpression(groupBy, state, scope, false, false);
   }
 
   for (const orderBy of statement.orderBy ?? []) {
-    validateExpression(orderBy.by, state, scope, false);
+    validateExpression(orderBy.by, state, scope, false, false);
   }
 
   return buildOutputColumns(statement.columns ?? []);
@@ -324,7 +324,7 @@ function buildSources(
         validateUnqualifiedField(column.name, state, scope);
       }
     }
-    validateExpression(from.join?.on, state, scope, false);
+    validateExpression(from.join?.on, state, scope, false, true);
   }
 
   return sources;
@@ -353,7 +353,8 @@ function sourceFrom(from: any, state: ValidationState, ctes: Map<string, Set<str
 
   if (from.type === 'statement') {
     const columns = validateSelectStatement(from.statement, state, ctes);
-    return { kind: 'subquery', alias: normalizeName(from.alias), columns };
+    const alias = from.alias?.name || from.alias;
+    return { kind: 'subquery', alias: normalizeName(alias), columns };
   }
 
   if (from.type === 'call') {
@@ -385,31 +386,39 @@ function addSource(sources: Map<string, Source>, source: Source, alias: string) 
 }
 
 function sourceAlias(from: any, source: Source): string {
+  if (from.name?.alias?.name) return from.name.alias.name;
   if (from.name?.alias) return from.name.alias;
+  if (from.alias?.name) return from.alias.name;
   if (from.alias) return from.alias;
   if (source.kind === 'table') return source.table;
   if (source.kind === 'cte') return source.name;
   return source.alias;
 }
 
-function validateExpression(expr: any, state: ValidationState, scope: SelectScope, allowWildcard: boolean): void {
+function validateExpression(
+  expr: any, 
+  state: ValidationState, 
+  scope: SelectScope, 
+  allowWildcard: boolean,
+  isWhereClause: boolean = false
+): void {
   if (!expr || typeof expr !== 'object') return;
 
   switch (expr.type) {
     case 'ref':
-      validateRef(expr, state, scope, allowWildcard);
+      validateRef(expr, state, scope, allowWildcard, isWhereClause);
       return;
     case 'call': {
       const funcName = normalizeName(qualifiedName(expr.function));
       const isCount = funcName === 'count';
       assertSafeFunction(expr.function);
-      for (const arg of expr.args ?? []) validateExpression(arg, state, scope, isCount);
-      validateExpression(expr.filter, state, scope, false);
-      for (const orderBy of expr.orderBy ?? []) validateExpression(orderBy.by, state, scope, false);
+      for (const arg of expr.args ?? []) validateExpression(arg, state, scope, isCount, isWhereClause);
+      validateExpression(expr.filter, state, scope, false, isWhereClause);
+      for (const orderBy of expr.orderBy ?? []) validateExpression(orderBy.by, state, scope, false, false);
       if (expr.over) {
-        for (const orderBy of expr.over.orderBy ?? []) validateExpression(orderBy.by, state, scope, false);
+        for (const orderBy of expr.over.orderBy ?? []) validateExpression(orderBy.by, state, scope, false, false);
         for (const partitionBy of expr.over.partitionBy ?? []) {
-          validateExpression(partitionBy, state, scope, false);
+          validateExpression(partitionBy, state, scope, false, false);
         }
       }
       return;
@@ -423,15 +432,21 @@ function validateExpression(expr: any, state: ValidationState, scope: SelectScop
     default:
       for (const value of Object.values(expr)) {
         if (Array.isArray(value)) {
-          for (const item of value) validateExpression(item, state, scope, false);
+          for (const item of value) validateExpression(item, state, scope, false, isWhereClause);
         } else {
-          validateExpression(value, state, scope, false);
+          validateExpression(value, state, scope, false, isWhereClause);
         }
       }
   }
 }
 
-function validateRef(ref: any, state: ValidationState, scope: SelectScope, allowWildcard: boolean): void {
+function validateRef(
+  ref: any, 
+  state: ValidationState, 
+  scope: SelectScope, 
+  allowWildcard: boolean,
+  isWhereClause: boolean
+): void {
   const column = normalizeName(ref.name);
 
   if (column === '*') {
@@ -444,7 +459,7 @@ function validateRef(ref: any, state: ValidationState, scope: SelectScope, allow
     return;
   }
 
-  if (scope.outputAliases?.has(column)) {
+  if (!isWhereClause && scope.outputAliases?.has(column)) {
     return;
   }
 
@@ -626,6 +641,10 @@ function normalizeSql(sql: string): string {
 
 function stripTrailingSemicolon(sql: string): string {
   return sql.replace(/;\s*$/, '').trim();
+}
+
+function stripTrailingSemicolonAndComments(sql: string): string {
+  return sql.replace(/(--.*|;\s*|(\/\*[\s\S]*?\*\/))$/g, '').trim();
 }
 
 function readonlyKeywordCode(sql: string): SqlGuardCode | undefined {

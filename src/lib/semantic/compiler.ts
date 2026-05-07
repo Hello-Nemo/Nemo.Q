@@ -379,8 +379,8 @@ export class SQLCompiler {
     const fromClause = this.buildJoinClause(path);
 
     const selectItems = [
-      ...dimensions.map(d => `${d.transform || d.column} AS ${d.id}`),
-      ...metrics.map(m => `${this.resolveMetricExpression(m)} AS ${m.id}`)
+      ...dimensions.map(d => `${d.transform || d.column} AS "${d.id}"`),
+      ...metrics.map(m => `${this.resolveMetricExpression(m)} AS "${m.id}"`)
     ];
 
     const whereClause = this.buildWhereClause(plan, metrics);
@@ -435,8 +435,8 @@ export class SQLCompiler {
       path.forEach(p => { if (!combinedPath.includes(p)) combinedPath.push(p); });
 
       const selectItems = [
-        ...dimensions.map(d => `${d.transform || d.column} AS dim_${d.id}`),
-        ...factMetrics.map(m => `${this.resolveMetricExpression(m)} AS ${m.id}`)
+        ...dimensions.map(d => `${d.transform || d.column} AS "dim_${d.id}"`),
+        ...factMetrics.map(m => `${this.resolveMetricExpression(m)} AS "${m.id}"`)
       ];
       
       const joins = this.buildJoinClause(path);
@@ -450,10 +450,10 @@ export class SQLCompiler {
 
     // 2. 将各个事实表的结果基于维度进行对齐缝合
     const finalSelect = [
-      ...dimensions.map(d => `COALESCE(${factList.map((_, i) => `fact_${i}.dim_${d.id}`).join(', ')}) AS ${d.id}`),
+      ...dimensions.map(d => `COALESCE(${factList.map((_, i) => `fact_${i}."dim_${d.id}"`).join(', ')}) AS "${d.id}"`),
       ...metrics.map(m => {
         const factIdx = factList.indexOf(m.entityId);
-        return `fact_${factIdx}.${m.id}`;
+        return `fact_${factIdx}."${m.id}"`;
       })
     ];
 
@@ -462,7 +462,12 @@ export class SQLCompiler {
       if (dimensions.length === 0) {
         finalFrom += ` CROSS JOIN fact_${i}`;
       } else {
-        const joinOn = dimensions.map(d => `fact_0.dim_${d.id} = fact_${i}.dim_${d.id}`).join(' AND ');
+        // 关键修复：使用之前所有事实表的 COALESCE 维度进行对齐，防止第一个事实表数据缺失导致的对齐失败
+        const joinOn = dimensions.map(d => {
+          const prevFacts = Array.from({ length: i }, (_, idx) => `fact_${idx}."dim_${d.id}"`);
+          const prevCoalesce = prevFacts.length > 1 ? `COALESCE(${prevFacts.join(', ')})` : prevFacts[0];
+          return `${prevCoalesce} = fact_${i}."dim_${d.id}"`;
+        }).join(' AND ');
         finalFrom += ` FULL OUTER JOIN fact_${i} ON ${joinOn}`;
       }
     }
@@ -530,46 +535,41 @@ export class SQLCompiler {
     });
   }
 
-  /**
-   * 同环比编译：基于 Multi-pass 生成对比查询
-   */
   private compileComparison(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): CompilationDraft {
     const type = plan.comparison!.type;
     const interval = type === 'MoM' ? '1 month' : type === 'YoY' ? '1 year' : '1 period';
 
-    // 1. 生成“当前周期” CTE
+    // 1. 生成“当前周期”数据计划
     const currentPlan = { ...plan, comparison: undefined };
     const currentResult = this.compileSinglePass(currentPlan, metrics, dimensions);
-    const currentSql = currentResult.sql;
     
-    // 2. 生成“历史周期” CTE
+    // 2. 构造“历史周期”数据计划：深度克隆并进行时间偏移
+    const historicalTimeRange = this.shiftTimeRange(plan.timeRange!, interval);
     const historicalPlan = { 
       ...plan, 
       comparison: undefined,
-      // 简单的时间偏移处理，生产环境需更精细的时间函数
-      filters: [...plan.filters] 
+      timeRange: historicalTimeRange
     };
-    
-    // 构造 CTE
+    const historicalResult = this.compileSinglePass(historicalPlan, metrics, dimensions);
+
+    // 3. 构造 CTE
     const ctes = [
-      `current_period AS (${currentSql})`,
-      `historical_period AS (
-        ${currentSql.replace(/CURRENT_DATE/g, `(CURRENT_DATE - INTERVAL '${interval}')`)}
-      )`
+      `current_period AS (${currentResult.sql})`,
+      `historical_period AS (${historicalResult.sql})`
     ];
 
-    // 3. 计算增长率
+    // 4. 计算增长率
     const finalSelect = [
-      ...dimensions.map(d => `current_period.${d.id}`),
+      ...dimensions.map(d => `current_period."${d.id}"`),
       ...metrics.flatMap(m => [
-        `current_period.${m.id} AS ${m.id}`,
-        `historical_period.${m.id} AS ${m.id}_prev`,
-        `(current_period.${m.id} - historical_period.${m.id}) / NULLIF(historical_period.${m.id}, 0) AS ${m.id}_growth`
+        `current_period."${m.id}" AS "${m.id}"`,
+        `historical_period."${m.id}" AS "${m.id}_prev"`,
+        `(current_period."${m.id}" - historical_period."${m.id}") / NULLIF(historical_period."${m.id}", 0) AS "${m.id}_growth"`
       ])
     ];
 
     const joinOn = dimensions.length > 0 
-      ? ` ON ${dimensions.map(d => `current_period.${d.id} = historical_period.${d.id}`).join(' AND ')}` 
+      ? ` ON ${dimensions.map(d => `current_period."${d.id}" = historical_period."${d.id}"`).join(' AND ')}` 
       : ' ON 1=1';
 
     const sql = `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} FROM current_period LEFT JOIN historical_period${joinOn}`;
@@ -581,6 +581,25 @@ export class SQLCompiler {
         type: 'Comparison'
       }
     };
+  }
+
+  /**
+   * 时间平移逻辑：支持相对时间与绝对时间
+   */
+  private shiftTimeRange(range: TimeRange, interval: string): TimeRange {
+    if (range.type === 'absolute') {
+      return {
+        ...range,
+        start: range.start ? `DATE '${range.start}' - INTERVAL '${interval}'` : undefined,
+        end: range.end ? `DATE '${range.end}' - INTERVAL '${interval}'` : undefined
+      } as any; // 这里使用 SQL 表达式作为日期字符串，compileSinglePass 中的 buildTimeRangeConditions 会处理
+    }
+
+    // 相对时间直接在 SQL 层面处理偏移
+    return {
+      ...range,
+      _shiftInterval: interval // 内部标记位，用于 buildTimeRangeConditions
+    } as any;
   }
 
   private buildAnalysisEventSource(event: AnalysisEvent): { fromClause: string; path: string[] } {
@@ -879,7 +898,8 @@ export class SQLCompiler {
     }
 
     plan.filters.forEach(f => {
-      conditions.push(this.buildFilterCondition(f, availableEntityIds));
+      const cond = this.buildFilterCondition(f, availableEntityIds);
+      if (cond) conditions.push(cond);
     });
 
     return conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
@@ -896,7 +916,8 @@ export class SQLCompiler {
     }
 
     if (availableEntityIds && !availableEntityIds.has(dim.entityId)) {
-      throw new Error(`${fieldLabel}不属于当前 CTE 路径: ${filter.field}`);
+      // 关键修复：多阶段编译中，如果过滤器不适用于当前路径，则跳过（由其他阶段或最终阶段处理）
+      return '';
     }
 
     const actualField = dim.column;
@@ -968,41 +989,43 @@ export class SQLCompiler {
       throw new Error('absolute timeRange 需要提供 start 或 end');
     }
 
+    const shift = (timeRange as any)._shiftInterval ? ` - INTERVAL '${(timeRange as any)._shiftInterval}'` : '';
+
     switch (timeRange.value) {
       case 'today':
         return [
-          `${column} >= CURRENT_DATE`,
-          `${column} < CURRENT_DATE + INTERVAL '1 day'`
+          `${column} >= CURRENT_DATE${shift}`,
+          `${column} < CURRENT_DATE${shift} + INTERVAL '1 day'`
         ];
       case 'yesterday':
         return [
-          `${column} >= CURRENT_DATE - INTERVAL '1 day'`,
-          `${column} < CURRENT_DATE`
+          `${column} >= CURRENT_DATE${shift} - INTERVAL '1 day'`,
+          `${column} < CURRENT_DATE${shift}`
         ];
       case 'last_7_days':
         return [
-          `${column} >= CURRENT_DATE - INTERVAL '7 days'`,
-          `${column} < CURRENT_DATE + INTERVAL '1 day'`
+          `${column} >= CURRENT_DATE${shift} - INTERVAL '7 days'`,
+          `${column} < CURRENT_DATE${shift} + INTERVAL '1 day'`
         ];
       case 'last_30_days':
         return [
-          `${column} >= CURRENT_DATE - INTERVAL '30 days'`,
-          `${column} < CURRENT_DATE + INTERVAL '1 day'`
+          `${column} >= CURRENT_DATE${shift} - INTERVAL '30 days'`,
+          `${column} < CURRENT_DATE${shift} + INTERVAL '1 day'`
         ];
       case 'this_month':
         return [
-          `${column} >= DATE_TRUNC('month', CURRENT_DATE)`,
-          `${column} < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'`
+          `${column} >= DATE_TRUNC('month', CURRENT_DATE${shift})`,
+          `${column} < DATE_TRUNC('month', CURRENT_DATE${shift}) + INTERVAL '1 month'`
         ];
       case 'last_month':
         return [
-          `${column} >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')`,
-          `${column} < DATE_TRUNC('month', CURRENT_DATE)`
+          `${column} >= DATE_TRUNC('month', CURRENT_DATE${shift} - INTERVAL '1 month')`,
+          `${column} < DATE_TRUNC('month', CURRENT_DATE${shift})`
         ];
       case 'this_year':
         return [
-          `${column} >= DATE_TRUNC('year', CURRENT_DATE)`,
-          `${column} < DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year'`
+          `${column} >= DATE_TRUNC('year', CURRENT_DATE${shift})`,
+          `${column} < DATE_TRUNC('year', CURRENT_DATE${shift}) + INTERVAL '1 year'`
         ];
       default:
         throw new Error(`不支持的 timeRange preset: ${timeRange.value || '(empty)'}`);

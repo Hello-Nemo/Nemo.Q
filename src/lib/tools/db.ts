@@ -669,6 +669,26 @@ export function cancelPreviewedQueryPlan(args: {
   previewPlanHash?: string;
 }) {
   const record = getPreviewedQueryPlan(args.planId);
+
+  if (!record && !args.plan && !args.previewPlanHash) {
+    const rejectEvent: QueryPlanAuditEvent = {
+      stage: 'reject',
+      at: nowIso(),
+      reason: 'planId 未在服务端登记，且取消请求没有携带任何回退审计凭证。',
+    };
+
+    return {
+      canceled: false,
+      code: 'QUERY_PLAN_NOT_FOUND',
+      executedSql: false,
+      error: '取消失败：该预览计划不存在或已丢失，请重新生成预览。',
+      audit: {
+        planId: args.planId,
+        approvalChain: buildApprovalChain([rejectEvent]),
+      },
+    };
+  }
+
   const canceledAt = nowIso();
   const planHash = record?.planHash || (args.plan ? hashPlan(args.plan) : args.previewPlanHash);
   const cancelEvent: QueryPlanAuditEvent = {

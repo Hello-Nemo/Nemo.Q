@@ -66,6 +66,7 @@ interface SqlSignals {
   hasGroupBy: boolean;
   tables: Set<string>;
   fields: Set<string>;
+  unqualifiedFields: Set<string>;
   aliases: Set<string>;
   expressions: Set<string>;
 }
@@ -146,28 +147,14 @@ function matchMetric(
     };
   }
 
-  const normalizedAliases = new Set([
-    normalizeSearchText(metric.id),
-    normalizeSearchText(metric.name)
-  ]);
-  if (
-    signals.hasAggregation &&
-    Array.from(signals.aliases).some((alias) => normalizedAliases.has(alias))
-  ) {
-    return {
-      id: metric.id,
-      name: metric.name,
-      reason: 'sql_alias',
-      expression: resolvedExpression,
-      certified: true
-    };
-  }
-
-  const metricFields = collectQualifiedColumns(resolvedExpression).map(normalizeQualifiedName);
+  const { qualified, unqualified } = collectFields(resolvedExpression);
   const mentionsMetric = contextMentionsMetric(metric, contextText);
+
+  // 关键修复：同时检查限定名和非限定名。对于非限定名，只要它在当前查询涉及的所有字段中出现，就认为是匹配的。
   const hasMetricFields =
-    metricFields.length > 0 &&
-    metricFields.every((field) => signals.fields.has(field));
+    (qualified.length > 0 || unqualified.length > 0) &&
+    qualified.every((field) => signals.fields.has(normalizeQualifiedName(field))) &&
+    unqualified.every((field) => signals.unqualifiedFields.has(normalizeName(field)));
 
   if (mentionsMetric && signals.hasAggregation && hasMetricFields) {
     return {
@@ -279,6 +266,7 @@ function analyzeSql(sql: string): SqlSignals {
     hasGroupBy: false,
     tables: new Set(),
     fields: new Set(),
+    unqualifiedFields: new Set(),
     aliases: new Set(),
     expressions: new Set()
   };
@@ -375,7 +363,13 @@ function analyzeExpression(expr: any, signals: SqlSignals, aliases: Map<string, 
 
   if (expr.type === 'ref') {
     const field = refSignature(expr, aliases);
-    if (field) signals.fields.add(field);
+    if (field) {
+      if (field.includes('.')) {
+        signals.fields.add(field);
+      } else {
+        signals.unqualifiedFields.add(field);
+      }
+    }
     return;
   }
 
@@ -468,9 +462,39 @@ function contextMentionsMetric(metric: Metric, contextText: string): boolean {
     .some((part) => contextText.includes(normalizeSearchText(part)));
 }
 
-function collectQualifiedColumns(text?: string): string[] {
-  if (!text) return [];
-  return [...text.matchAll(/\b([a-zA-Z_][\w]*)\.([a-zA-Z_][\w]*)\b/g)].map((match) => match[0]);
+function collectFields(expression?: string): { qualified: string[]; unqualified: string[] } {
+  const qualified: string[] = [];
+  const unqualified: string[] = [];
+  if (!expression) return { qualified, unqualified };
+
+  try {
+    const statement = parse(`SELECT ${expression}`)[0] as any;
+    const walk = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if (node.type === 'ref') {
+        const name = qualifiedName(node);
+        if (name.includes('.')) {
+          qualified.push(name);
+        } else {
+          unqualified.push(name);
+        }
+      }
+      Object.values(node).forEach((val) => {
+        if (Array.isArray(val)) val.forEach(walk);
+        else walk(val);
+      });
+    };
+    walk(statement.columns[0].expr);
+  } catch {
+    // 降级：正则匹配
+    const words = expression.match(/\b\w+(\.\w+)?\b/g) || [];
+    words.forEach((w) => {
+      if (w.includes('.')) qualified.push(w);
+      else unqualified.push(w);
+    });
+  }
+
+  return { qualified, unqualified };
 }
 
 function isCertified(metric: Metric): boolean {
