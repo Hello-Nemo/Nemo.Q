@@ -23,6 +23,51 @@ export interface QueryResult {
   rows: any[];
   message?: string;
   error?: string;
+  code?: string;
+  executedSql?: boolean;
+  details?: Record<string, any>;
+}
+
+const DEFAULT_SCHEMA = 'public';
+
+const dangerousIdentifierPatterns = [
+  { pattern: /\s/, reason: '包含空白字符' },
+  { pattern: /;/, reason: '包含分号' },
+  { pattern: /--/, reason: '包含行注释符' },
+  { pattern: /\/\*/, reason: '包含块注释开始符' },
+  { pattern: /\*\//, reason: '包含块注释结束符' },
+  { pattern: /[()]/, reason: '包含括号' }
+];
+
+export function quotePostgresIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function validateRequestedTableName(tableName: string): QueryResult | null {
+  if (tableName.length === 0) {
+    return {
+      rowCount: 0,
+      rows: [],
+      error: '非法 tableName: 表名不能为空。',
+      code: 'INVALID_TABLE_NAME',
+      executedSql: false,
+      details: { tableName, reason: '表名为空' }
+    };
+  }
+
+  const dangerousPattern = dangerousIdentifierPatterns.find(({ pattern }) => pattern.test(tableName));
+  if (dangerousPattern) {
+    return {
+      rowCount: 0,
+      rows: [],
+      error: `非法 tableName: ${dangerousPattern.reason}。`,
+      code: 'INVALID_TABLE_NAME',
+      executedSql: false,
+      details: { tableName, reason: dangerousPattern.reason }
+    };
+  }
+
+  return null;
 }
 
 export interface IDataSource {
@@ -83,6 +128,22 @@ export class PostgresDataSource implements IDataSource {
     }
   }
 
+  private async getSchemaTableAllowlist(
+    client: pg.PoolClient,
+    schema: string = DEFAULT_SCHEMA
+  ): Promise<string[]> {
+    const res = await client.query(
+      `SELECT table_name
+       FROM information_schema.tables
+       WHERE table_schema = $1
+         AND table_type IN ('BASE TABLE', 'VIEW')
+       ORDER BY table_name`,
+      [schema]
+    );
+
+    return res.rows.map(row => String(row.table_name));
+  }
+
   async executeQuery(sql: string): Promise<QueryResult> {
     // 强制增加 LIMIT 保护（如果 SQL 中没有聚合操作且没有 LIMIT）
     let safeSql = sql.trim();
@@ -110,12 +171,35 @@ export class PostgresDataSource implements IDataSource {
   }
 
   async getTableSamples(tableName: string): Promise<QueryResult> {
+    const validationError = validateRequestedTableName(tableName);
+    if (validationError) {
+      return validationError;
+    }
+
     const client = await this.pool.connect();
     try {
+      const allowedTables = await this.getSchemaTableAllowlist(client);
+      if (!allowedTables.includes(tableName)) {
+        return {
+          rowCount: 0,
+          rows: [],
+          error: `表不在当前 schema allowlist 中: ${tableName}`,
+          code: 'TABLE_NOT_ALLOWED',
+          executedSql: false,
+          details: {
+            tableName,
+            schema: DEFAULT_SCHEMA,
+            allowedTables
+          }
+        };
+      }
+
+      const quotedTableName = quotePostgresIdentifier(tableName);
+
       // 针对大表使用 TABLESAMPLE (Postgres 特有)
       // 先尝试 TABLESAMPLE，如果失败（如表太小或不支持）则回退到普通 LIMIT
       try {
-        const res = await client.query(`SELECT * FROM ${tableName} TABLESAMPLE SYSTEM (1) LIMIT 5`);
+        const res = await client.query(`SELECT * FROM ${quotedTableName} TABLESAMPLE SYSTEM (1) LIMIT 5`);
         const rowCount = res.rowCount ?? 0;
         if (rowCount > 0) {
           return { rowCount, rows: res.rows };
@@ -124,7 +208,7 @@ export class PostgresDataSource implements IDataSource {
         // 回退逻辑
       }
       
-      const res = await client.query(`SELECT * FROM ${tableName} LIMIT 5`);
+      const res = await client.query(`SELECT * FROM ${quotedTableName} LIMIT 5`);
       return { rowCount: res.rowCount || 0, rows: res.rows };
     } catch (error: any) {
       return { rowCount: 0, rows: [], error: error.message };
