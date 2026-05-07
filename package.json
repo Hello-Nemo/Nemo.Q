@@ -11,7 +11,10 @@
     "onboard": "tsx scripts/onboard-db.ts",
     "build": "next build",
     "start": "next start",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "pnpm test:semantic && pnpm test:query-plan-confirmation && pnpm test:query-plan-ui",
+    "test:semantic": "tsx src/lib/semantic/test-compiler.ts",
+    "test:query-plan-confirmation": "tsx src/lib/tools/test-query-plan-confirmation.ts",
+    "test:query-plan-ui": "tsx src/lib/test-query-plan-ui.ts"
   },
   "keywords": [],
   "author": "",
