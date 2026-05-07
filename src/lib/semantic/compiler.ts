@@ -1,4 +1,14 @@
-import { QueryPlan, SemanticLayer, Metric, Dimension, Entity, Relationship, CompilationResult, Lineage } from './types';
+import {
+  QueryPlan,
+  SemanticLayer,
+  Metric,
+  Dimension,
+  Relationship,
+  CompilationResult,
+  CertificationAudit
+} from './types';
+
+type CompilationDraft = Omit<CompilationResult, 'certification'>;
 
 /**
  * 路径发现器：使用 Dijkstra 算法在语义图中寻找最优 Join 路径
@@ -120,25 +130,27 @@ export class SQLCompiler {
     const dimensions = this.resolveDimensions(plan);
     this.validateFilters(plan);
 
+    let result: CompilationDraft;
+
     // 1. 处理时间智能（同环比对比）
     if (plan.comparison && plan.timeRange) {
-      return this.compileComparison(plan, metrics, dimensions);
-    }
-
-    // 2. 检查是否涉及多个事实表 (Chasm Trap 识别)
-    const factEntities = new Set<string>();
-    metrics.forEach(m => {
-      const ent = this.semanticLayer.entities[m.entityId];
-      if (ent && ent.type === 'fact') {
-        factEntities.add(m.entityId);
-      }
-    });
-
-    if (factEntities.size > 1) {
-      return this.compileMultiPass(plan, metrics, dimensions, factEntities);
+      result = this.compileComparison(plan, metrics, dimensions);
     } else {
-      return this.compileSinglePass(plan, metrics, dimensions);
+      // 2. 检查是否涉及多个事实表 (Chasm Trap 识别)
+      const factEntities = new Set<string>();
+      metrics.forEach(m => {
+        const ent = this.semanticLayer.entities[m.entityId];
+        if (ent && ent.type === 'fact') {
+          factEntities.add(m.entityId);
+        }
+      });
+
+      result = factEntities.size > 1
+        ? this.compileMultiPass(plan, metrics, dimensions, factEntities)
+        : this.compileSinglePass(plan, metrics, dimensions);
     }
+
+    return this.attachCertification(result, metrics, dimensions);
   }
 
   private resolveMetrics(plan: QueryPlan): Metric[] {
@@ -192,7 +204,7 @@ export class SQLCompiler {
   /**
    * 单阶段编译：标准 Join 逻辑
    */
-  private compileSinglePass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): CompilationResult {
+  private compileSinglePass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): CompilationDraft {
     const requiredEntityIds = new Set<string>();
     metrics.forEach(m => requiredEntityIds.add(m.entityId));
     dimensions.forEach(d => requiredEntityIds.add(d.entityId));
@@ -236,7 +248,7 @@ export class SQLCompiler {
   /**
    * 多阶段编译 (Multi-pass)：应对 Chasm Trap，保证指标聚合准确性
    */
-  private compileMultiPass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[], factEntities: Set<string>): CompilationResult {
+  private compileMultiPass(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[], factEntities: Set<string>): CompilationDraft {
     const ctes: string[] = [];
     const factList = Array.from(factEntities);
     const allRequiredEntities = new Set<string>(factList);
@@ -359,7 +371,7 @@ export class SQLCompiler {
   /**
    * 同环比编译：基于 Multi-pass 生成对比查询
    */
-  private compileComparison(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): CompilationResult {
+  private compileComparison(plan: QueryPlan, metrics: Metric[], dimensions: Dimension[]): CompilationDraft {
     const type = plan.comparison!.type;
     const interval = type === 'MoM' ? '1 month' : type === 'YoY' ? '1 year' : '1 period';
 
@@ -430,6 +442,83 @@ export class SQLCompiler {
       }
     }
     return clause;
+  }
+
+  private attachCertification(
+    result: CompilationDraft,
+    metrics: Metric[],
+    dimensions: Dimension[]
+  ): CompilationResult {
+    const relationships = this.resolveRelationshipsForPath(result.lineage.path);
+    const metricAudit = metrics.map(metric => {
+      const entity = this.semanticLayer.entities[metric.entityId];
+      return {
+        id: metric.id,
+        name: metric.name,
+        certified: metric.certified === true,
+        timeColumn: metric.timeColumn || entity?.defaultTimeColumn,
+        businessDefinition: metric.businessDefinition,
+        allowDetailDrilldown: metric.allowDetailDrilldown
+      };
+    });
+    const dimensionAudit = dimensions.map(dimension => ({
+      id: dimension.id,
+      name: dimension.name,
+      certified: dimension.certified === true
+    }));
+    const relationshipAudit = relationships.map(relationship => ({
+      fromEntityId: relationship.fromEntityId,
+      toEntityId: relationship.toEntityId,
+      type: relationship.type,
+      joinOn: relationship.joinOn,
+      certified: relationship.certified === true
+    }));
+
+    const reasons = [
+      ...metricAudit
+        .filter(metric => !metric.certified)
+        .map(metric => `metric ${metric.id} is not certified`),
+      ...dimensionAudit
+        .filter(dimension => !dimension.certified)
+        .map(dimension => `dimension ${dimension.id} is not certified`),
+      ...relationshipAudit
+        .filter(relationship => !relationship.certified)
+        .map(relationship => `relationship ${relationship.fromEntityId}->${relationship.toEntityId} is not certified`)
+    ];
+    const isCertified = reasons.length === 0;
+    const certification: CertificationAudit = {
+      isCertified,
+      certificationLevel: isCertified ? 'certified_plan' : 'semantic_compiled',
+      status: isCertified ? 'certified' : 'exploratory',
+      reasons,
+      metrics: metricAudit,
+      dimensions: dimensionAudit,
+      relationships: relationshipAudit
+    };
+
+    return { ...result, certification };
+  }
+
+  private resolveRelationshipsForPath(path: string[]): Relationship[] {
+    if (path.length <= 1) return [];
+
+    const relationships: Relationship[] = [];
+    const joined = new Set<string>([path[0]]);
+
+    for (let i = 1; i < path.length; i++) {
+      const nextId = path[i];
+      const rel = this.semanticLayer.relationships.find(r =>
+        (joined.has(r.fromEntityId) && r.toEntityId === nextId) ||
+        (joined.has(r.toEntityId) && r.fromEntityId === nextId)
+      );
+
+      if (rel) {
+        relationships.push(rel);
+        joined.add(nextId);
+      }
+    }
+
+    return relationships;
   }
 
   private buildWhereClause(plan: QueryPlan, metrics: Metric[], availableEntityIds?: Set<string>): string {

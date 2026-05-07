@@ -99,7 +99,7 @@ export function detectSemanticCoverage(input: DetectSemanticCoverageInput): Sema
           name: dimension.name,
           reason: 'sql_expression' as const,
           expression: dimension.transform || dimension.column,
-          certified: dimension.certified !== false
+          certified: dimension.certified === true
         };
       }
 
@@ -109,7 +109,7 @@ export function detectSemanticCoverage(input: DetectSemanticCoverageInput): Sema
           name: dimension.name,
           reason: 'sql_field' as const,
           column: dimension.column,
-          certified: dimension.certified !== false
+          certified: dimension.certified === true
         };
       }
 
@@ -460,7 +460,7 @@ function collectQualifiedColumns(text?: string): string[] {
 }
 
 function isCertified(metric: Metric): boolean {
-  return metric.certified !== false;
+  return metric.certified === true;
 }
 
 function qualifiedName(name: any): string {

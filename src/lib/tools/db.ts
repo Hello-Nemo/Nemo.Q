@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { PostgresDataSource, IDataSource } from '../db-connector';
 import { SQLCompiler } from '../semantic/compiler';
-import { QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
+import { CertificationAudit, Lineage, QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
 import { detectSemanticCoverage } from '../semantic/coverage';
 import { buildSqlGuardPolicy, guardSql } from '../sql-guard/guard';
 import {
@@ -90,6 +90,25 @@ const buildMismatchResult = (args: {
     attempted: args.attempted,
     approvalChain: buildApprovalChain(args.events),
   },
+});
+
+const buildSemanticQueryAudit = (args: {
+  sql: string;
+  explanation: string;
+  plan: QueryPlan;
+  lineage: Lineage;
+  certification: CertificationAudit;
+}) => ({
+  sql: args.sql,
+  explanation: args.explanation,
+  plan: {
+    ...args.plan,
+    certificationLevel: args.certification.certificationLevel,
+  },
+  lineage: args.lineage,
+  isCertified: args.certification.isCertified,
+  certificationLevel: args.certification.certificationLevel,
+  certification: args.certification,
 });
 
 /**
@@ -351,7 +370,7 @@ export const semanticQuery = tool({
     
     try {
       const compilationResult = compiler.compile(plan as QueryPlan);
-      const { sql, lineage } = compilationResult;
+      const { sql, lineage, certification } = compilationResult;
       console.log('[DEBUG] semanticQuery generated SQL:', sql);
       
       const ds = getDataSource();
@@ -359,13 +378,13 @@ export const semanticQuery = tool({
         const result = await ds.executeQuery(sql);
         return {
           ...result,
-          audit: { 
-            sql, 
-            explanation, 
-            plan,
+          audit: buildSemanticQueryAudit({
+            sql,
+            explanation,
+            plan: plan as QueryPlan,
             lineage,
-            isCertified: true 
-          }
+            certification,
+          })
         };
       } finally {
         await ds.close();
@@ -465,7 +484,7 @@ export async function confirmPreviewedQueryPlan(args: {
 
   try {
     const compilationResult = compiler.compile(plan as QueryPlan);
-    const { sql, lineage } = compilationResult;
+    const { sql, lineage, certification } = compilationResult;
     const attemptedSqlHash = hashSql(sql);
     const expectedSqlHash = record?.sqlHash || args.previewSqlHash || attemptedSqlHash;
 
@@ -530,11 +549,13 @@ export async function confirmPreviewedQueryPlan(args: {
     return {
       ...result,
       audit: {
-        sql,
-        explanation: record?.explanation || args.explanation || '确认执行已预览查询计划',
-        plan,
-        lineage,
-        isCertified: true,
+        ...buildSemanticQueryAudit({
+          sql,
+          explanation: record?.explanation || args.explanation || '确认执行已预览查询计划',
+          plan: plan as QueryPlan,
+          lineage,
+          certification,
+        }),
         planId: args.planId,
         preview: {
           planHash: expectedPlanHash,
@@ -627,6 +648,13 @@ export function createPreviewedQueryPlan(args: {
     planHash: record.planHash,
     previewSqlHash: record.sqlHash,
     audit: {
+      ...buildSemanticQueryAudit({
+        sql: result.sql,
+        explanation: args.explanation,
+        plan: args.plan as QueryPlan,
+        lineage: result.lineage,
+        certification: result.certification,
+      }),
       planId: record.planId,
       preview: {
         planHash: record.planHash,

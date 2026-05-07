@@ -13,6 +13,10 @@ export interface Metric {
   timeColumn?: string;
   /** 指标是否已经过人工认证。 */
   certified?: boolean;
+  /** 业务口径定义，用于审计展示和治理。 */
+  businessDefinition?: string;
+  /** 是否允许从该指标直接下钻到明细行。 */
+  allowDetailDrilldown?: boolean;
   formula?: string; // 计算指标公式，如 {{sales_amount}} / {{order_count}}
 }
 
@@ -97,9 +101,43 @@ export interface Lineage {
   type: 'SinglePass' | 'MultiPass' | 'Comparison';
 }
 
+export interface CertificationMetricAudit {
+  id: string;
+  name: string;
+  certified: boolean;
+  timeColumn?: string;
+  businessDefinition?: string;
+  allowDetailDrilldown?: boolean;
+}
+
+export interface CertificationDimensionAudit {
+  id: string;
+  name: string;
+  certified: boolean;
+}
+
+export interface CertificationRelationshipAudit {
+  fromEntityId: string;
+  toEntityId: string;
+  type: Relationship['type'];
+  joinOn: string;
+  certified: boolean;
+}
+
+export interface CertificationAudit {
+  isCertified: boolean;
+  certificationLevel: 'certified_plan' | 'semantic_compiled';
+  status: 'certified' | 'exploratory';
+  reasons: string[];
+  metrics: CertificationMetricAudit[];
+  dimensions: CertificationDimensionAudit[];
+  relationships: CertificationRelationshipAudit[];
+}
+
 export interface CompilationResult {
   sql: string;
   lineage: Lineage;
+  certification: CertificationAudit;
 }
 
 export interface CompiledQuery {

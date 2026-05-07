@@ -33,6 +33,11 @@ interface InsightCardProps {
   audit?: {
     sql: string;
     explanation: string;
+    isCertified?: boolean;
+    certification?: {
+      isCertified?: boolean;
+      certificationLevel?: string;
+    };
     plan?: any;
   };
 }
@@ -62,17 +67,12 @@ export default function InsightCard({
 
   if (!isMounted) return <div style={{ height: 240 }} className="card-skeleton" />;
 
-  const hasSemanticAssets = (audit?.plan?.metrics && audit.plan.metrics.length > 0) || 
-                             (audit?.plan?.lineage?.metrics && audit.plan.lineage.metrics.length > 0) ||
-                             (audit?.plan?.dimensions && audit.plan.dimensions.length > 0);
-                             
-  const hasMetrics = audit?.plan?.metrics?.length > 0 || audit?.plan?.lineage?.metrics?.length > 0;
-  const hasDimensions = audit?.plan?.dimensions?.length > 0 || audit?.plan?.lineage?.dimensions?.length > 0;
-  
-  const effectiveIsCertified = isCertified || 
+  const effectiveIsCertified = isCertified ||
+    audit?.isCertified === true ||
+    audit?.certification?.isCertified === true ||
+    audit?.certification?.certificationLevel === 'certified_plan' ||
     audit?.plan?.certificationLevel === 'certified_plan' || 
-    audit?.plan?.certificationLevel === 'certified' ||
-    ((hasMetrics || hasDimensions) && !audit?.plan?.isRawSql);
+    audit?.plan?.certificationLevel === 'certified';
 
   // 改进的数据 Key 识别逻辑
   const detectKeys = () => {

@@ -42,7 +42,10 @@
       "expression": "SUM(orders.total_price)",
       "description": "所有订单的总金额",
       "entityId": "orders",
-      "timeColumn": "orders.order_date"
+      "timeColumn": "orders.order_date",
+      "certified": true,
+      "businessDefinition": "销售额口径为所有订单 total_price 的汇总，按订单日期归属到统计周期。",
+      "allowDetailDrilldown": false
     },
     "order_count": {
       "id": "order_count",
@@ -50,7 +53,10 @@
       "expression": "COUNT(orders.id)",
       "description": "总订单数",
       "entityId": "orders",
-      "timeColumn": "orders.order_date"
+      "timeColumn": "orders.order_date",
+      "certified": true,
+      "businessDefinition": "订单量口径为订单表中的订单记录数，按订单日期归属到统计周期。",
+      "allowDetailDrilldown": false
     },
     "user_count": {
       "id": "user_count",
@@ -58,7 +64,10 @@
       "expression": "COUNT(DISTINCT users.id)",
       "description": "注册用户总数",
       "entityId": "users",
-      "timeColumn": "users.joined_at"
+      "timeColumn": "users.joined_at",
+      "certified": true,
+      "businessDefinition": "用户数口径为去重后的注册用户数量，按用户注册时间归属到统计周期。",
+      "allowDetailDrilldown": false
     },
     "return_amount": {
       "id": "return_amount",
@@ -66,7 +75,10 @@
       "expression": "SUM(returns.amount)",
       "description": "总退货金额",
       "entityId": "returns",
-      "timeColumn": "returns.return_date"
+      "timeColumn": "returns.return_date",
+      "certified": true,
+      "businessDefinition": "退货金额口径为退货表 amount 的汇总，按退货发生日期归属到统计周期。",
+      "allowDetailDrilldown": false
     },
     "aov": {
       "id": "aov",
@@ -75,6 +87,9 @@
       "description": "平均订单金额",
       "entityId": "orders",
       "timeColumn": "orders.order_date",
+      "certified": true,
+      "businessDefinition": "客单价口径为销售额除以订单量，用于衡量每笔订单的平均成交金额。",
+      "allowDetailDrilldown": false,
       "formula": "{{sales_amount}} / {{order_count}}"
     }
 
@@ -86,14 +101,16 @@
       "name": "国家",
       "column": "users.country",
       "description": "用户所属国家",
-      "entityId": "users"
+      "entityId": "users",
+      "certified": true
     },
     "product_category": {
       "id": "product_category",
       "name": "产品类别",
       "column": "products.category",
       "description": "产品所属分类",
-      "entityId": "products"
+      "entityId": "products",
+      "certified": true
     },
     "age_group": {
       "id": "age_group",
@@ -101,6 +118,7 @@
       "column": "CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END",
       "description": "根据用户年龄划分的年龄段",
       "entityId": "users",
+      "certified": true,
       "transform": "CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END"
     },
 
@@ -109,21 +127,24 @@
       "name": "下单日期",
       "column": "orders.order_date",
       "description": "下单的时间日期",
-      "entityId": "orders"
+      "entityId": "orders",
+      "certified": true
     },
     "return_date": {
       "id": "return_date",
       "name": "退货日期",
       "column": "returns.return_date",
       "description": "退货发生日期",
-      "entityId": "returns"
+      "entityId": "returns",
+      "certified": true
     },
     "username": {
       "id": "username",
       "name": "用户名",
       "column": "users.username",
       "description": "用户名称",
-      "entityId": "users"
+      "entityId": "users",
+      "certified": true
     }
   },
   "relationships": [
@@ -131,19 +152,22 @@
       "fromEntityId": "users",
       "toEntityId": "orders",
       "joinOn": "users.id = orders.user_id",
-      "type": "one_to_many"
+      "type": "one_to_many",
+      "certified": true
     },
     {
       "fromEntityId": "products",
       "toEntityId": "orders",
       "joinOn": "products.id = orders.product_id",
-      "type": "one_to_many"
+      "type": "one_to_many",
+      "certified": true
     },
     {
       "fromEntityId": "users",
       "toEntityId": "returns",
       "joinOn": "users.id = returns.user_id",
-      "type": "one_to_many"
+      "type": "one_to_many",
+      "certified": true
     }
 
   ]
