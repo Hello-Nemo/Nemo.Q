@@ -35,6 +35,9 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
   // Extract audit data from debugRaw if available
   const rawAudit = debugRaw?.output?.audit || debugRaw?.state?.audit || {};
   const plan = rawAudit.plan || {};
+  const planId = rawAudit.planId;
+  const approvalChain = Array.isArray(rawAudit.approvalChain) ? rawAudit.approvalChain : [];
+  const shortHash = (value?: string) => value ? value.slice(0, 12) : 'pending';
   
   const safeAssumptions = Array.isArray(assumptions) 
     ? assumptions 
@@ -148,9 +151,58 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
                   </div>
                 </div>
               </div>
+
+              {approvalChain.length > 0 && (
+                <div className="approval-chain-panel">
+                  <div className="approval-chain-header">
+                    <ShieldCheck size={14} />
+                    <span>PREVIEW → CONFIRM → EXECUTE</span>
+                  </div>
+                  <div className="approval-meta-row">
+                    {planId && <span className="approval-chip">PLAN {planId}</span>}
+                    <span className="approval-chip">PREVIEW SQL {shortHash(rawAudit.preview?.sqlHash)}</span>
+                    {rawAudit.executed?.sqlHash && (
+                      <span className="approval-chip">EXEC SQL {shortHash(rawAudit.executed.sqlHash)}</span>
+                    )}
+                  </div>
+                  <div className="approval-steps">
+                    {approvalChain.map((event: any, idx: number) => (
+                      <div key={`${event.stage}-${idx}`} className={`approval-step ${event.stage}`}>
+                        <span className="step-dot" />
+                        <span className="step-label">{event.stage}</span>
+                        {(event.sqlHash || event.planHash) && (
+                          <span className="step-hash">{shortHash(event.sqlHash || event.planHash)}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="audit-grid">
+              {approvalChain.length > 0 && (
+                <div className="audit-section full-width">
+                  <div className="section-header">
+                    <div className="icon-box assets">
+                      <ShieldCheck size={14} />
+                    </div>
+                    <div className="label-group">
+                      <span className="section-label">确认执行链路</span>
+                      <span className="section-sub">PREVIEW_CONFIRM_EXECUTE</span>
+                    </div>
+                  </div>
+                  <div className="section-content">
+                    <div className="approval-meta-row">
+                      {planId && <span className="approval-chip">PLAN {planId}</span>}
+                      <span className="approval-chip">PREVIEW SQL {shortHash(rawAudit.preview?.sqlHash)}</span>
+                      {rawAudit.executed?.sqlHash && (
+                        <span className="approval-chip">EXEC SQL {shortHash(rawAudit.executed.sqlHash)}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* 语义资产区块 (Metrics & Dimensions) */}
               { (metrics.length > 0 || dimensions.length > 0) && (
               <div className="audit-section full-width semantic-summary">
@@ -407,6 +459,81 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
           color: var(--text-secondary);
         }
         .empty-meta { font-size: 12px; color: var(--text-tertiary); font-style: italic; }
+
+        .approval-chain-panel {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          padding: 14px;
+          border: 1px solid #A7F3D0;
+          border-radius: 12px;
+          background: #ECFDF5;
+        }
+        .approval-chain-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-family: var(--font-mono);
+          font-size: 10px;
+          font-weight: 800;
+          color: #047857;
+        }
+        .approval-meta-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .approval-chip {
+          padding: 4px 8px;
+          border-radius: 6px;
+          background: #FFFFFF;
+          border: 1px solid #D1FAE5;
+          font-family: var(--font-mono);
+          font-size: 9px;
+          font-weight: 800;
+          color: #065F46;
+        }
+        .approval-steps {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+          gap: 8px;
+        }
+        .approval-step {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          padding: 8px;
+          border-radius: 8px;
+          background: rgba(255,255,255,0.75);
+          border: 1px solid rgba(16, 185, 129, 0.16);
+        }
+        .step-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #10B981;
+          flex-shrink: 0;
+        }
+        .approval-step.reject .step-dot,
+        .approval-step.cancel .step-dot {
+          background: #F59E0B;
+        }
+        .step-label {
+          font-size: 11px;
+          font-weight: 800;
+          color: #065F46;
+          text-transform: uppercase;
+        }
+        .step-hash {
+          margin-left: auto;
+          font-family: var(--font-mono);
+          font-size: 9px;
+          font-weight: 700;
+          color: #047857;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
 
         .copy-mini { color: var(--text-tertiary); padding: 6px; border-radius: 6px; }
         .copy-mini:hover { color: var(--accent-primary); background: rgba(99, 102, 241, 0.05); }

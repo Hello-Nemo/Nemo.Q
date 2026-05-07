@@ -7,6 +7,14 @@ import { SQLCompiler } from '../semantic/compiler';
 import { QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
 import { detectSemanticCoverage } from '../semantic/coverage';
 import { buildSqlGuardPolicy, guardSql } from '../sql-guard/guard';
+import {
+  appendQueryPlanEvent,
+  getPreviewedQueryPlan,
+  hashPlan,
+  hashSql,
+  registerPreviewedQueryPlan,
+  QueryPlanAuditEvent,
+} from '../query-plan-registry';
 
 
 // 加载语义层配置
@@ -42,6 +50,46 @@ const buildSemanticCompilationError = (message: string) => ({
   hint: '请调用 listSemanticAtoms 查看当前可用的指标和维度；如果用户所需口径不在语义层中，请调用 askClarification 让用户选择替代口径或说明语义层未覆盖。',
   recoveryActions: ['listSemanticAtoms', 'askClarification'],
   details: { message }
+});
+
+const nowIso = () => new Date().toISOString();
+
+const buildApprovalChain = (events: QueryPlanAuditEvent[]) =>
+  events.map(event => ({
+    ...event,
+    label: {
+      preview: 'preview plan',
+      confirm: 'confirm plan',
+      execute: 'execute sql',
+      cancel: 'cancel plan',
+      reject: 'reject execution',
+    }[event.stage],
+  }));
+
+const buildMismatchResult = (args: {
+  planId: string;
+  reason: string;
+  preview?: {
+    planHash?: string;
+    sqlHash?: string;
+    sql?: string;
+  };
+  attempted?: {
+    planHash?: string;
+    sqlHash?: string;
+    sql?: string;
+  };
+  events: QueryPlanAuditEvent[];
+}) => ({
+  error: `预览计划与确认计划不一致，已拒绝执行。${args.reason}`,
+  code: 'PREVIEW_EXECUTION_MISMATCH',
+  executedSql: false,
+  audit: {
+    planId: args.planId,
+    preview: args.preview,
+    attempted: args.attempted,
+    approvalChain: buildApprovalChain(args.events),
+  },
 });
 
 /**
@@ -328,6 +376,272 @@ export const semanticQuery = tool({
   },
 });
 
+export async function confirmPreviewedQueryPlan(args: {
+  planId: string;
+  plan?: QueryPlan;
+  explanation?: string;
+  previewPlanHash?: string;
+  previewSqlHash?: string;
+  executeSql?: (sql: string) => Promise<any>;
+}) {
+  const projectName = process.env.CURRENT_PROJECT || 'default';
+  const record = getPreviewedQueryPlan(args.planId);
+  const plan = record?.plan || args.plan;
+  const confirmedAt = nowIso();
+  const confirmEvent: QueryPlanAuditEvent = {
+    stage: 'confirm',
+    at: confirmedAt,
+  };
+
+  if (!plan) {
+    const rejectEvent: QueryPlanAuditEvent = {
+      stage: 'reject',
+      at: nowIso(),
+      reason: 'planId 未在服务端登记，且确认请求没有携带结构化 plan。',
+    };
+
+    return {
+      error: '确认失败：该预览计划不存在或已丢失，请重新生成预览。',
+      code: 'QUERY_PLAN_NOT_FOUND',
+      executedSql: false,
+      audit: {
+        planId: args.planId,
+        approvalChain: buildApprovalChain([confirmEvent, rejectEvent]),
+      },
+    };
+  }
+
+  const attemptedPlanHash = hashPlan(plan);
+  const expectedPlanHash = record?.planHash || args.previewPlanHash || attemptedPlanHash;
+
+  if (args.plan && record && hashPlan(args.plan) !== record.planHash) {
+    const rejectEvent: QueryPlanAuditEvent = {
+      stage: 'reject',
+      at: nowIso(),
+      reason: '确认请求携带的 plan 与服务端预览记录不一致。',
+    };
+    appendQueryPlanEvent(args.planId, rejectEvent);
+
+    return buildMismatchResult({
+      planId: args.planId,
+      reason: '确认请求携带的 plan 与服务端预览记录不一致。',
+      preview: {
+        planHash: record.planHash,
+        sqlHash: record.sqlHash,
+        sql: record.sql,
+      },
+      attempted: {
+        planHash: hashPlan(args.plan),
+      },
+      events: [...record.events, confirmEvent, rejectEvent],
+    });
+  }
+
+  if (args.previewPlanHash && args.previewPlanHash !== expectedPlanHash) {
+    const rejectEvent: QueryPlanAuditEvent = {
+      stage: 'reject',
+      at: nowIso(),
+      reason: '确认请求携带的 previewPlanHash 与登记记录不一致。',
+    };
+    if (record) appendQueryPlanEvent(args.planId, rejectEvent);
+
+    return buildMismatchResult({
+      planId: args.planId,
+      reason: '确认请求携带的 previewPlanHash 与登记记录不一致。',
+      preview: {
+        planHash: expectedPlanHash,
+        sqlHash: record?.sqlHash || args.previewSqlHash,
+        sql: record?.sql,
+      },
+      attempted: {
+        planHash: args.previewPlanHash,
+      },
+      events: [...(record?.events || []), confirmEvent, rejectEvent],
+    });
+  }
+
+  const semanticLayer = getSemanticLayer(projectName);
+  const compiler = new SQLCompiler(semanticLayer);
+
+  try {
+    const compilationResult = compiler.compile(plan as QueryPlan);
+    const { sql, lineage } = compilationResult;
+    const attemptedSqlHash = hashSql(sql);
+    const expectedSqlHash = record?.sqlHash || args.previewSqlHash || attemptedSqlHash;
+
+    if (attemptedPlanHash !== expectedPlanHash || attemptedSqlHash !== expectedSqlHash) {
+      const rejectEvent: QueryPlanAuditEvent = {
+        stage: 'reject',
+        at: nowIso(),
+        planHash: attemptedPlanHash,
+        sqlHash: attemptedSqlHash,
+        reason: '重新编译后的 plan 或 SQL hash 与预览不一致。',
+      };
+      if (record) appendQueryPlanEvent(args.planId, rejectEvent);
+
+      return buildMismatchResult({
+        planId: args.planId,
+        reason: '重新编译后的 plan 或 SQL hash 与预览不一致。',
+        preview: {
+          planHash: expectedPlanHash,
+          sqlHash: expectedSqlHash,
+          sql: record?.sql,
+        },
+        attempted: {
+          planHash: attemptedPlanHash,
+          sqlHash: attemptedSqlHash,
+          sql,
+        },
+        events: [...(record?.events || []), confirmEvent, rejectEvent],
+      });
+    }
+
+    const execute = args.executeSql ?? (async (compiledSql: string) => {
+      const ds = getDataSource();
+      try {
+        return await ds.executeQuery(compiledSql);
+      } finally {
+        await ds.close();
+      }
+    });
+
+    if (record) appendQueryPlanEvent(args.planId, confirmEvent);
+
+    const result = await execute(sql);
+    const executedAt = nowIso();
+    const executeEvent: QueryPlanAuditEvent = {
+      stage: 'execute',
+      at: executedAt,
+      planHash: attemptedPlanHash,
+      sqlHash: attemptedSqlHash,
+    };
+    const latestRecord = record
+      ? appendQueryPlanEvent(args.planId, executeEvent, 'executed')
+      : undefined;
+    const previewEvent: QueryPlanAuditEvent = record
+      ? record.events[0]
+      : {
+          stage: 'preview',
+          at: confirmedAt,
+          planHash: expectedPlanHash,
+          sqlHash: expectedSqlHash,
+        };
+
+    return {
+      ...result,
+      audit: {
+        sql,
+        explanation: record?.explanation || args.explanation || '确认执行已预览查询计划',
+        plan,
+        lineage,
+        isCertified: true,
+        planId: args.planId,
+        preview: {
+          planHash: expectedPlanHash,
+          sqlHash: expectedSqlHash,
+          sql: record?.sql || sql,
+          at: record?.createdAt || previewEvent.at,
+          source: record ? 'server-session' : 'message-metadata',
+        },
+        confirmed: {
+          at: confirmedAt,
+          source: record ? 'server-session' : 'message-metadata',
+        },
+        executed: {
+          planHash: attemptedPlanHash,
+          sqlHash: attemptedSqlHash,
+          sql,
+          at: executedAt,
+        },
+        approvalChain: buildApprovalChain(
+          latestRecord?.events || [previewEvent, confirmEvent, executeEvent]
+        ),
+      },
+    };
+  } catch (e: any) {
+    return buildSemanticCompilationError(e.message);
+  }
+}
+
+export function cancelPreviewedQueryPlan(args: {
+  planId: string;
+  feedback?: string;
+  plan?: QueryPlan;
+  previewPlanHash?: string;
+}) {
+  const record = getPreviewedQueryPlan(args.planId);
+  const canceledAt = nowIso();
+  const planHash = record?.planHash || (args.plan ? hashPlan(args.plan) : args.previewPlanHash);
+  const cancelEvent: QueryPlanAuditEvent = {
+    stage: 'cancel',
+    at: canceledAt,
+    planHash,
+    feedback: args.feedback,
+  };
+  const latestRecord = appendQueryPlanEvent(args.planId, cancelEvent, 'canceled');
+
+  return {
+    canceled: true,
+    requires_action: false,
+    planId: args.planId,
+    feedback: args.feedback,
+    audit: {
+      planId: args.planId,
+      preview: record
+        ? {
+            planHash: record.planHash,
+            sqlHash: record.sqlHash,
+            sql: record.sql,
+            at: record.createdAt,
+          }
+        : {
+            planHash,
+            source: 'message-metadata',
+          },
+      approvalChain: buildApprovalChain(latestRecord?.events || [cancelEvent]),
+    },
+  };
+}
+
+export function createPreviewedQueryPlan(args: {
+  plan: QueryPlan;
+  explanation: string;
+  projectName?: string;
+}) {
+  const projectName = args.projectName || process.env.CURRENT_PROJECT || 'default';
+  const semanticLayer = getSemanticLayer(projectName);
+  const compiler = new SQLCompiler(semanticLayer);
+  const result = compiler.compile(args.plan as QueryPlan);
+  const record = registerPreviewedQueryPlan({
+    projectName,
+    explanation: args.explanation,
+    plan: args.plan as QueryPlan,
+    sql: result.sql,
+    lineage: result.lineage,
+  });
+
+  return {
+    ...result,
+    plan: args.plan,
+    planId: record.planId,
+    planHash: record.planHash,
+    previewSqlHash: record.sqlHash,
+    audit: {
+      planId: record.planId,
+      preview: {
+        planHash: record.planHash,
+        sqlHash: record.sqlHash,
+        sql: result.sql,
+        at: record.createdAt,
+      },
+      approvalChain: buildApprovalChain(record.events),
+    },
+    explanation: args.explanation,
+    requires_action: true,
+    preview: true,
+  };
+}
+
 /**
  * 预览查询计划：仅编译不执行，用于用户确认逻辑
  */
@@ -338,18 +652,11 @@ export const previewQueryPlan = tool({
     plan: queryPlanSchema.describe('结构化的查询计划 (QueryPlan)'),
   }),
   execute: async ({ plan, explanation }) => {
-    const projectName = process.env.CURRENT_PROJECT || 'default';
-    const semanticLayer = getSemanticLayer(projectName);
-    const compiler = new SQLCompiler(semanticLayer);
-    
     try {
-      const result = compiler.compile(plan as QueryPlan);
-      return {
-        ...result,
+      return createPreviewedQueryPlan({
         explanation,
-        requires_action: true, // 强制暂停，等待用户在 UI 点击“确认执行”
-        preview: true
-      };
+        plan: plan as QueryPlan,
+      });
     } catch (e: any) {
       return {
         ...buildSemanticCompilationError(e.message),
@@ -357,6 +664,30 @@ export const previewQueryPlan = tool({
       };
     }
   },
+});
+
+export const confirmQueryPlan = tool({
+  description: '根据 previewQueryPlan 返回的 planId 或结构化 plan 确认执行已预览的语义查询计划。必须校验 preview 与 execute 的 plan/sql hash 一致。',
+  inputSchema: z.object({
+    planId: z.string().describe('previewQueryPlan 返回的计划 ID'),
+    plan: queryPlanSchema.optional().describe('可选的完整 QueryPlan；当服务端 session 丢失时作为 message metadata 回退'),
+    previewPlanHash: z.string().optional().describe('previewQueryPlan 返回的 planHash'),
+    previewSqlHash: z.string().optional().describe('previewQueryPlan 返回的 previewSqlHash'),
+  }),
+  execute: async ({ planId, plan, previewPlanHash, previewSqlHash }) =>
+    confirmPreviewedQueryPlan({ planId, plan, previewPlanHash, previewSqlHash }),
+});
+
+export const cancelQueryPlan = tool({
+  description: '取消已预览但尚未执行的 QueryPlan，并记录 planId 与用户反馈。',
+  inputSchema: z.object({
+    planId: z.string().describe('previewQueryPlan 返回的计划 ID'),
+    feedback: z.string().optional().describe('用户取消或要求调整的原因'),
+    plan: queryPlanSchema.optional().describe('可选的完整 QueryPlan，用于 session 丢失时保留审计上下文'),
+    previewPlanHash: z.string().optional().describe('previewQueryPlan 返回的 planHash'),
+  }),
+  execute: async ({ planId, feedback, plan, previewPlanHash }) =>
+    cancelPreviewedQueryPlan({ planId, feedback, plan, previewPlanHash }),
 });
 
 export const dbTools = {
@@ -367,5 +698,7 @@ export const dbTools = {
   askClarification,
   semanticQuery,
   previewQueryPlan,
+  confirmQueryPlan,
+  cancelQueryPlan,
   listSemanticAtoms,
 };

@@ -34,6 +34,12 @@ const InsightCard = dynamic(() => import('@/components/InsightCard'), { ssr: fal
 const InsightCanvas = dynamic(() => import('@/components/InsightCanvas'), { ssr: false });
 const ThinkingIndicator = dynamic(() => import('@/components/ThinkingIndicator'), { ssr: false });
 import Logo from '@/components/Logo';
+import {
+  getPreviewHydrationKey,
+  getPreviewToolPartInput,
+  hydratePreviewToolPart,
+  needsPreviewHydration,
+} from '@/lib/query-plan-ui';
 
 const SUGGESTED_QUESTIONS = [
   "分析各国家的销售额和客单价",
@@ -45,6 +51,16 @@ const SUGGESTED_QUESTIONS = [
 import { useHistory } from '@/components/HistoryContext';
 import { luminaStorage } from '@/lib/db';
 
+const createClientMessageId = (prefix: string) => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const getPartArgs = (part: any) => part?.args || part?.input || part?.invocation?.args || {};
+const getPartOutput = (part: any) => part?.output || part?.result;
+
 export default function ChatPage() {
   const { currentSessionId, updateSession, createSession, sessions } = useHistory();
   const [pinnedCards, setPinnedCards] = useState<any[]>([]);
@@ -53,10 +69,12 @@ export default function ChatPage() {
   
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
   const [canvasWidth, setCanvasWidth] = useState(480);
+  const [pendingPlanActions, setPendingPlanActions] = useState<Record<string, 'confirming' | 'canceling'>>({});
   const isResizing = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
   const isProgrammaticScroll = useRef(false);
+  const previewHydrationInFlight = useRef(new Set<string>());
 
   // Load initial messages from session if exists
   const [initialMessages, setInitialMessages] = useState<TimestampedDataAgentUIMessage[]>([]);
@@ -157,6 +175,213 @@ export default function ChatPage() {
     }
     sendMessage(params);
   }, [isLoading, stop, sendMessage]);
+
+  const appendSyntheticMessages = useCallback((nextMessages: TimestampedDataAgentUIMessage[]) => {
+    setMessages(current => [...current, ...nextMessages] as TimestampedDataAgentUIMessage[]);
+  }, [setMessages]);
+
+  const planActionStates = useMemo(() => {
+    const states: Record<string, 'confirmed' | 'canceled'> = {};
+
+    messages.forEach(message => {
+      message.parts.forEach((part: any) => {
+        const output = getPartOutput(part);
+        const planId = output?.audit?.planId || output?.planId;
+
+        if (!planId) return;
+        if (part.type === 'tool-confirmQueryPlan' && output?.audit?.executed) {
+          states[planId] = 'confirmed';
+        }
+        if (part.type === 'tool-cancelQueryPlan') {
+          states[planId] = 'canceled';
+        }
+      });
+    });
+
+    return states;
+  }, [messages]);
+
+  useEffect(() => {
+    if (status !== 'ready') return;
+
+    const missingPreviews: Array<{ key: string; input: any }> = [];
+
+    messages.forEach(message => {
+      message.parts.forEach((part: any) => {
+        if (!needsPreviewHydration(part)) return;
+
+        const key = getPreviewHydrationKey(part);
+        const input = getPreviewToolPartInput(part);
+        if (!key || !input?.plan || previewHydrationInFlight.current.has(key)) return;
+
+        previewHydrationInFlight.current.add(key);
+        missingPreviews.push({ key, input });
+      });
+    });
+
+    missingPreviews.forEach(async ({ key, input }) => {
+      let result: any;
+
+      try {
+        const response = await fetch('/api/query-plans/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            plan: input.plan,
+            explanation: input.explanation || '预览查询计划',
+          }),
+        });
+
+        result = await response.json();
+      } catch (err: any) {
+        result = {
+          error: err.message || '无法生成预览 SQL',
+          code: 'PREVIEW_QUERY_PLAN_CLIENT_ERROR',
+          executedSql: false,
+        };
+      } finally {
+        previewHydrationInFlight.current.delete(key);
+      }
+
+      setMessages(current => current.map(message => ({
+        ...message,
+        parts: message.parts.map((part: any) => (
+          getPreviewHydrationKey(part) === key
+            ? hydratePreviewToolPart(part, result)
+            : part
+        )),
+      })) as TimestampedDataAgentUIMessage[]);
+    });
+  }, [messages, setMessages, status]);
+
+  const handleConfirmPlan = useCallback(async (previewData: any) => {
+    const planId = previewData?.planId;
+    if (!planId || pendingPlanActions[planId]) return;
+
+    const input = {
+      planId,
+      plan: previewData?.plan,
+      explanation: previewData?.explanation,
+      previewPlanHash: previewData?.planHash || previewData?.audit?.preview?.planHash,
+      previewSqlHash: previewData?.previewSqlHash || previewData?.audit?.preview?.sqlHash,
+    };
+
+    setPendingPlanActions(prev => ({ ...prev, [planId]: 'confirming' }));
+    appendSyntheticMessages([
+      {
+        id: createClientMessageId('confirm-user'),
+        role: 'user',
+        createdAt: new Date(),
+        metadata: { action: 'confirmQueryPlan', planId },
+        parts: [{ type: 'text', text: `确认执行计划 ${planId}` }],
+      } as TimestampedDataAgentUIMessage,
+    ]);
+
+    try {
+      const response = await fetch('/api/query-plans/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const result = await response.json();
+
+      appendSyntheticMessages([
+        {
+          id: createClientMessageId('confirm-assistant'),
+          role: 'assistant',
+          createdAt: new Date(),
+          metadata: { action: 'confirmQueryPlan', planId },
+          parts: [{
+            type: 'tool-confirmQueryPlan',
+            toolCallId: createClientMessageId('tool-confirm'),
+            state: 'output-available',
+            input,
+            output: result,
+          } as any],
+        } as TimestampedDataAgentUIMessage,
+      ]);
+    } catch (err: any) {
+      appendSyntheticMessages([
+        {
+          id: createClientMessageId('confirm-error'),
+          role: 'assistant',
+          createdAt: new Date(),
+          metadata: { action: 'confirmQueryPlan', planId },
+          parts: [{
+            type: 'tool-confirmQueryPlan',
+            toolCallId: createClientMessageId('tool-confirm-error'),
+            state: 'output-available',
+            input,
+            output: {
+              error: err.message || '确认执行失败',
+              code: 'CONFIRM_QUERY_PLAN_CLIENT_ERROR',
+              audit: { planId },
+            },
+          } as any],
+        } as TimestampedDataAgentUIMessage,
+      ]);
+    } finally {
+      setPendingPlanActions(prev => {
+        const next = { ...prev };
+        delete next[planId];
+        return next;
+      });
+    }
+  }, [appendSyntheticMessages, pendingPlanActions]);
+
+  const handleCancelPlan = useCallback(async (previewData: any, feedback: string) => {
+    const planId = previewData?.planId;
+    if (!planId || pendingPlanActions[planId]) return;
+
+    const input = {
+      planId,
+      feedback,
+      plan: previewData?.plan,
+      previewPlanHash: previewData?.planHash || previewData?.audit?.preview?.planHash,
+    };
+
+    setPendingPlanActions(prev => ({ ...prev, [planId]: 'canceling' }));
+    appendSyntheticMessages([
+      {
+        id: createClientMessageId('cancel-user'),
+        role: 'user',
+        createdAt: new Date(),
+        metadata: { action: 'cancelQueryPlan', planId },
+        parts: [{ type: 'text', text: `取消计划 ${planId}：${feedback}` }],
+      } as TimestampedDataAgentUIMessage,
+    ]);
+
+    try {
+      const response = await fetch('/api/query-plans/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const result = await response.json();
+
+      appendSyntheticMessages([
+        {
+          id: createClientMessageId('cancel-assistant'),
+          role: 'assistant',
+          createdAt: new Date(),
+          metadata: { action: 'cancelQueryPlan', planId },
+          parts: [{
+            type: 'tool-cancelQueryPlan',
+            toolCallId: createClientMessageId('tool-cancel'),
+            state: 'output-available',
+            input,
+            output: result,
+          } as any],
+        } as TimestampedDataAgentUIMessage,
+      ]);
+    } finally {
+      setPendingPlanActions(prev => {
+        const next = { ...prev };
+        delete next[planId];
+        return next;
+      });
+    }
+  }, [appendSyntheticMessages, pendingPlanActions]);
 
 
   const handleScroll = useCallback(() => {
@@ -380,9 +605,6 @@ export default function ChatPage() {
     </div>
   );
 
-  const getPartArgs = (part: any) => part?.args || part?.input || part?.invocation?.args || {};
-  const getPartOutput = (part: any) => part?.output || part?.result;
-
   const renderPart = (part: DataAgentUIMessage['parts'][number], i: number, parts: DataAgentUIMessage['parts']) => {
     switch (part.type) {
       case 'text':
@@ -434,6 +656,10 @@ export default function ChatPage() {
         
         // 预览结果可能在 output 中（如果已执行）或在 args 中（如果是待确认状态）
         const displayData = output || args;
+        const planId = displayData?.planId;
+        const pendingAction = planId ? pendingPlanActions[planId] : undefined;
+        const completedAction = planId ? planActionStates[planId] : undefined;
+        const actionState = completedAction || pendingAction;
         
         return (
           <div key={`part-preview-${i}`} className="part-unit flow-part animate-fade-in">
@@ -446,26 +672,40 @@ export default function ChatPage() {
               <SqlAudit 
                 sql={displayData?.sql} 
                 explanation={displayData?.explanation}
-                debugRaw={{ output: { audit: { lineage: displayData?.lineage, plan: displayData?.plan } } }}
+                debugRaw={{ output: { audit: displayData?.audit || { lineage: displayData?.lineage, plan: displayData?.plan, planId } } }}
               />
 
               {(!output || output?.requires_action) && (
-                <div className="preview-actions">
-                  <button 
-                    className="confirm-btn soft-surface"
-                    onClick={() => safeSendMessage({ text: "确认执行该计划" })}
-                  >
-                    <Zap size={14} />
-                    <span>确认并执行</span>
-                  </button>
-                  <button 
-                    className="cancel-btn soft-surface"
-                    onClick={() => safeSendMessage({ text: "我不确定，请重新调整" })}
-                  >
+                actionState === 'confirmed' ? (
+                  <div className="action-status confirmed">
+                    <ShieldCheck size={14} />
+                    <span>已确认并执行</span>
+                  </div>
+                ) : actionState === 'canceled' ? (
+                  <div className="action-status canceled">
                     <AlertCircle size={14} />
-                    <span>重新调整</span>
-                  </button>
-                </div>
+                    <span>已取消，等待新的调整说明</span>
+                  </div>
+                ) : (
+                  <div className="preview-actions">
+                    <button
+                      className="confirm-btn soft-surface"
+                      disabled={!planId || pendingAction === 'confirming' || pendingAction === 'canceling'}
+                      onClick={() => handleConfirmPlan(displayData)}
+                    >
+                      <Zap size={14} />
+                      <span>{pendingAction === 'confirming' ? '执行中...' : '确认并执行'}</span>
+                    </button>
+                    <button
+                      className="cancel-btn soft-surface"
+                      disabled={!planId || pendingAction === 'confirming' || pendingAction === 'canceling'}
+                      onClick={() => handleCancelPlan(displayData, '我不确定，请重新调整')}
+                    >
+                      <AlertCircle size={14} />
+                      <span>{pendingAction === 'canceling' ? '取消中...' : '重新调整'}</span>
+                    </button>
+                  </div>
+                )
               )}
             </div>
             <style jsx>{`
@@ -513,6 +753,12 @@ export default function ChatPage() {
                 background: #1E293B;
                 transform: scale(1.02);
               }
+              .confirm-btn:disabled,
+              .cancel-btn:disabled {
+                opacity: 0.55;
+                cursor: not-allowed;
+                transform: none;
+              }
               .cancel-btn {
                 padding: 14px 24px;
                 background: #FFFFFF;
@@ -528,12 +774,33 @@ export default function ChatPage() {
                 background: #F8FAFC;
                 color: #1E293B;
               }
+              .action-status {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                padding: 12px 14px;
+                border-radius: 12px;
+                font-size: 13px;
+                font-weight: 800;
+              }
+              .action-status.confirmed {
+                color: #047857;
+                background: #ECFDF5;
+                border: 1px solid #A7F3D0;
+              }
+              .action-status.canceled {
+                color: #92400E;
+                background: #FFFBEB;
+                border: 1px solid #FDE68A;
+              }
             `}</style>
           </div>
         );
       }
 
       case 'tool-semanticQuery':
+      case 'tool-confirmQueryPlan':
       case 'tool-executeQuery': {
         const toolPart = part as any;
         if (!toolPart) return null;
@@ -573,6 +840,52 @@ export default function ChatPage() {
                 )}
               </div>
             </div>
+          </div>
+        );
+      }
+
+      case 'tool-cancelQueryPlan': {
+        const toolPart = part as any;
+        const args = getPartArgs(toolPart);
+        const output = getPartOutput(toolPart);
+        const planId = output?.planId || args?.planId;
+
+        return (
+          <div key={`part-cancel-${i}`} className="part-unit flow-part animate-fade-in">
+            <div className="cancelled-plan soft-surface">
+              <AlertCircle size={16} />
+              <div className="cancelled-copy">
+                <span className="cancelled-title">计划已取消</span>
+                <span className="cancelled-meta">{planId ? `PLAN_ID ${planId}` : '等待重新调整'}</span>
+              </div>
+            </div>
+            <style jsx>{`
+              .cancelled-plan {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 14px 16px;
+                color: #92400E;
+                background: #FFFBEB;
+                border: 1px solid #FDE68A;
+                border-radius: 12px;
+              }
+              .cancelled-copy {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+              }
+              .cancelled-title {
+                font-size: 13px;
+                font-weight: 800;
+              }
+              .cancelled-meta {
+                font-family: var(--font-mono);
+                font-size: 9px;
+                font-weight: 700;
+                color: #B45309;
+              }
+            `}</style>
           </div>
         );
       }
