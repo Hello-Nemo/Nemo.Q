@@ -11,7 +11,8 @@
     "onboard": "tsx scripts/onboard-db.ts",
     "build": "next build",
     "start": "next start",
-    "test": "pnpm test:semantic && pnpm test:sql-guard",
+    "test": "pnpm test:compiler && pnpm test:semantic && pnpm test:sql-guard",
+    "test:compiler": "vitest run",
     "test:semantic": "tsx src/lib/semantic/test-compiler.ts",
     "test:sql-guard": "tsx src/lib/sql-guard/test-sql-guard.ts && tsx src/lib/tools/test-execute-query-guard.ts"
   },
@@ -42,6 +43,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "19.2.14",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   }
 }
