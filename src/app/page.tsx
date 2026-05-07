@@ -186,9 +186,14 @@ export default function ChatPage() {
     messages.forEach(message => {
       message.parts.forEach((part: any) => {
         const output = getPartOutput(part);
-        const planId = output?.audit?.planId || output?.planId;
+        const args = getPartArgs(part);
+        
+        // 关键修复：优先从 audit 提取，支持从 args 兜底（用于 streaming 状态或 synthetic 消息）
+        const planId = output?.audit?.planId || output?.planId || args?.planId;
 
-        if (!planId) return;
+        // 严格校验 planId，防止 undefined 污染 states 对象
+        if (!planId || typeof planId !== 'string' || planId === 'undefined') return;
+
         if (part.type === 'tool-confirmQueryPlan' && output?.audit?.executed) {
           states[planId] = 'confirmed';
         }
@@ -616,13 +621,14 @@ export default function ChatPage() {
         );
 
       case 'reasoning': {
+        const reasoningPart = part as any;
         const isLastPart = i === (parts.length - 1);
         const isActive = isLoading && isLastPart;
         
         return (
           <div key={`part-reasoning-${i}`} className="part-unit reasoning-container-wrapper animate-fade-in">
             <ReasoningBlock 
-              text={part.text} 
+              text={reasoningPart.reasoning || reasoningPart.text || ''} 
               isActive={isActive} 
             />
           </div>
@@ -655,10 +661,13 @@ export default function ChatPage() {
         const state = toolPart?.state || 'unknown';
         
         // 预览结果可能在 output 中（如果已执行）或在 args 中（如果是待确认状态）
-        const displayData = output || args;
-        const planId = displayData?.planId;
+        const displayData = (output || args) as any;
+        const planId = displayData?.planId || displayData?.audit?.planId;
         const pendingAction = planId ? pendingPlanActions[planId] : undefined;
-        const completedAction = planId ? planActionStates[planId] : undefined;
+        // 增加对 planId 的存在性校验
+        const completedAction = (planId && typeof planId === 'string' && planId !== 'undefined') 
+          ? planActionStates[planId] 
+          : undefined;
         const actionState = completedAction || pendingAction;
         
         return (

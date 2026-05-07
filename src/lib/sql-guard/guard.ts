@@ -286,20 +286,20 @@ function validateSelect(
   const scope: SelectScope = { sources, ctes, outputAliases: selectedAliases };
 
   for (const column of statement.columns ?? []) {
-    validateExpression(column.expr, state, { sources, ctes });
+    validateExpression(column.expr, state, { sources, ctes }, false);
   }
 
-  validateExpression(statement.where, state, scope);
-  validateExpression(statement.having, state, scope);
-  validateExpression(statement.limit?.limit, state, scope);
-  validateExpression(statement.limit?.offset, state, scope);
+  validateExpression(statement.where, state, scope, false);
+  validateExpression(statement.having, state, scope, false);
+  validateExpression(statement.limit?.limit, state, scope, false);
+  validateExpression(statement.limit?.offset, state, scope, false);
 
   for (const groupBy of statement.groupBy ?? []) {
-    validateExpression(groupBy, state, scope);
+    validateExpression(groupBy, state, scope, false);
   }
 
   for (const orderBy of statement.orderBy ?? []) {
-    validateExpression(orderBy.by, state, scope);
+    validateExpression(orderBy.by, state, scope, false);
   }
 
   return buildOutputColumns(statement.columns ?? []);
@@ -324,7 +324,7 @@ function buildSources(
         validateUnqualifiedField(column.name, state, scope);
       }
     }
-    validateExpression(from.join?.on, state, scope);
+    validateExpression(from.join?.on, state, scope, false);
   }
 
   return sources;
@@ -392,25 +392,28 @@ function sourceAlias(from: any, source: Source): string {
   return source.alias;
 }
 
-function validateExpression(expr: any, state: ValidationState, scope: SelectScope): void {
+function validateExpression(expr: any, state: ValidationState, scope: SelectScope, allowWildcard: boolean): void {
   if (!expr || typeof expr !== 'object') return;
 
   switch (expr.type) {
     case 'ref':
-      validateRef(expr, state, scope);
+      validateRef(expr, state, scope, allowWildcard);
       return;
-    case 'call':
+    case 'call': {
+      const funcName = normalizeName(qualifiedName(expr.function));
+      const isCount = funcName === 'count';
       assertSafeFunction(expr.function);
-      for (const arg of expr.args ?? []) validateExpression(arg, state, scope);
-      validateExpression(expr.filter, state, scope);
-      for (const orderBy of expr.orderBy ?? []) validateExpression(orderBy.by, state, scope);
+      for (const arg of expr.args ?? []) validateExpression(arg, state, scope, isCount);
+      validateExpression(expr.filter, state, scope, false);
+      for (const orderBy of expr.orderBy ?? []) validateExpression(orderBy.by, state, scope, false);
       if (expr.over) {
-        for (const orderBy of expr.over.orderBy ?? []) validateExpression(orderBy.by, state, scope);
+        for (const orderBy of expr.over.orderBy ?? []) validateExpression(orderBy.by, state, scope, false);
         for (const partitionBy of expr.over.partitionBy ?? []) {
-          validateExpression(partitionBy, state, scope);
+          validateExpression(partitionBy, state, scope, false);
         }
       }
       return;
+    }
     case 'select':
     case 'with':
     case 'with recursive':
@@ -420,18 +423,19 @@ function validateExpression(expr: any, state: ValidationState, scope: SelectScop
     default:
       for (const value of Object.values(expr)) {
         if (Array.isArray(value)) {
-          for (const item of value) validateExpression(item, state, scope);
+          for (const item of value) validateExpression(item, state, scope, false);
         } else {
-          validateExpression(value, state, scope);
+          validateExpression(value, state, scope, false);
         }
       }
   }
 }
 
-function validateRef(ref: any, state: ValidationState, scope: SelectScope): void {
+function validateRef(ref: any, state: ValidationState, scope: SelectScope, allowWildcard: boolean): void {
   const column = normalizeName(ref.name);
 
   if (column === '*') {
+    if (allowWildcard) return;
     throw new GuardError('WILDCARD_NOT_ALLOWED', 'SQL Guard 禁止 SELECT *，请显式列出已授权字段。');
   }
 

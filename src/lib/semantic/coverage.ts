@@ -195,12 +195,26 @@ function buildBlockedResult(
     matchedDimensions
   );
 
+  const metricsInfo = matchedMetrics
+    .map((m) => `  - ${m.name} (id: ${m.id}): 语义定义为 \`${m.expression}\``)
+    .join('\n');
+  
+  const dimensionsInfo = matchedDimensions.length > 0 
+    ? `\n匹配到的维度：\n${matchedDimensions.map((d) => `  - ${d.name} (id: ${d.id}): 对应字段 \`${d.column || d.expression}\``).join('\n')}`
+    : '';
+
+  const hint = `拦截成功。检测到你正在查询认证指标，请改用 semanticQuery 以确保口径一致性。
+匹配到的指标：
+${metricsInfo}${dimensionsInfo}
+
+请立即调用 semanticQuery 并根据上述 id 构造 QueryPlan。严禁手写 SQL 绕过。`;
+
   return {
     coverageStatus: 'failed',
     executedSql: false,
     code: 'SEMANTIC_COVERAGE_REQUIRED',
     error: '该查询应使用 semanticQuery',
-    hint: '该问题命中了语义层认证指标。请先调用 listSemanticAtoms 查看可用 metrics/dimensions，再调用 semanticQuery 生成认证查询，避免用 executeQuery 绕过标准指标口径、lineage 和 certified audit。',
+    hint,
     recoveryActions: ['listSemanticAtoms', 'semanticQuery'],
     details: {
       reason: audit.reason,

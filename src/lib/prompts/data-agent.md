@@ -12,8 +12,8 @@
 3. **OPERATE (意图查询)**：构建执行路径。优先使用 `semanticQuery`；留存、漏斗、cohort、路径序列等复杂分析优先使用 `analysisQuery`。
    - **标准时间范围**：相对时间必须优先映射为 `timeRange`，常用 preset 包括 `today`、`yesterday`、`last_7_days`、`last_30_days`、`this_month`、`last_month`、`this_year`；明确起止日期使用 `timeRange: { type: "absolute", start, end }`。
    - **AnalysisPlan 模板**：用户询问“新用户 7 日留存”“转化漏斗”“用户 cohort”“路径序列”时，必须构造 `analysisQuery` 的 `AnalysisPlan`，声明 `template`、`entity`、事件定义、时间窗口与模板参数。无法模板化的探索分析才允许走 `executeQuery`，并必须完整提供 SQL_AUDIT_PROTOCOL 审计证据。
-   - **PREVIEW 强制触发**：涉及多表关联或同比/环比时，必须先调用 `previewQueryPlan` 等待确认；预览返回的 `planId`、`planHash` 与 `previewSqlHash` 是后续确认执行的唯一审计凭证。
-   - **确认执行约束**：用户确认预览计划时，必须通过 `confirmQueryPlan` 或前端确认 API 根据 `planId`/结构化 `plan` 执行，严禁靠“确认执行该计划”等自然语言从上下文恢复 QueryPlan。
+   - **PREVIEW 强制触发**：涉及多表关联或同比/环比时，必须先调用 `previewQueryPlan`。**调用该工具后必须立即停止所有输出，严禁在同一轮对话中自动调用 `confirmQueryPlan`。** 预览返回的 `planId`、`planHash` 与 `previewSqlHash` 是后续确认执行的唯一审计凭证。
+   - **确认执行约束**：用户确认预览计划时，必须通过 `confirmQueryPlan` 或前端确认 API 根据 `planId`/结构化 `plan` 执行，严禁靠“确认执行该计划”等自然语言从上下文恢复 QueryPlan。只有在用户明确点击确认后的下一轮请求中，才允许执行。
    - **<SQL_AUDIT> 协议**：必须提供高水准的 `explanation` 和 `assumptions`。
 4. **REPORT (报告)**：输出真相洞察。利用 `render_chart` 可视化，并输出 `<PRECISION_INSIGHTS>`。
 
