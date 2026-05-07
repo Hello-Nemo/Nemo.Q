@@ -45,8 +45,18 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
 
   const metrics = plan.metrics || plan.lineage?.metrics || [];
   const dimensions = plan.dimensions || plan.lineage?.dimensions || [];
+  const analysis = rawAudit.analysis || plan.analysis;
+  const analysisEvents = Array.isArray(analysis?.events) ? analysis.events : [];
+  const formatAuditValue = (value: any): string => {
+    if (value === undefined || value === null || value === '') return '未指定';
+    if (typeof value !== 'object') return String(value);
+    return Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .map(([key, entryValue]) => `${key}: ${String(entryValue)}`)
+      .join(' / ');
+  };
 
-  const hasData = !!(sql || explanation || safeAssumptions.length > 0);
+  const hasData = !!(sql || explanation || safeAssumptions.length > 0 || analysis);
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<'logic' | 'sql'>('logic');
@@ -75,7 +85,7 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
             <div className={`pulse-dot ${hasData ? 'active' : ''}`} />
             <div className="protocol-badge">
               {isCertified ? <ShieldCheck size={10} /> : <FileSearch size={10} />}
-              <span className="protocol-label">{isCertified ? 'CERTIFIED_AUDIT_PROTOCOL' : 'EXPLORATORY_SQL_AUDIT'}</span>
+              <span className="protocol-label">{analysis ? 'ANALYSIS_TEMPLATE_AUDIT' : isCertified ? 'CERTIFIED_AUDIT_PROTOCOL' : 'EXPLORATORY_SQL_AUDIT'}</span>
             </div>
           </div>
           
@@ -134,6 +144,40 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
           {viewMode === 'logic' && lineage ? (
             <div className="logic-view-container">
               <PlanVisualizer lineage={lineage} explanation={explanation} />
+
+              {analysis && (
+                <div className="analysis-template-panel">
+                  <div className="analysis-template-header">
+                    <Settings2 size={14} />
+                    <span>{String(analysis.template).toUpperCase()} TEMPLATE</span>
+                  </div>
+                  <div className="analysis-meta-grid">
+                    <div>
+                      <span className="analysis-meta-label">实体口径</span>
+                      <strong>{analysis.entity?.label || analysis.entity?.id}</strong>
+                      <small>{analysis.entity?.column}</small>
+                    </div>
+                    <div>
+                      <span className="analysis-meta-label">时间窗口</span>
+                      <strong>{formatAuditValue(analysis.timeWindow)}</strong>
+                    </div>
+                    <div>
+                      <span className="analysis-meta-label">模板参数</span>
+                      <strong>{formatAuditValue(analysis.parameters)}</strong>
+                    </div>
+                  </div>
+                  {analysisEvents.length > 0 && (
+                    <div className="analysis-event-list">
+                      {analysisEvents.map((event: any) => (
+                        <div key={event.id} className="analysis-event-chip">
+                          <span>{event.name}</span>
+                          <small>{event.actorColumn} / {event.timestampColumn}</small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               
               <div className="logic-metadata">
                 <div className="metadata-item">
@@ -181,6 +225,50 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
             </div>
           ) : (
             <div className="audit-grid">
+              {analysis && (
+                <div className="audit-section full-width analysis-summary">
+                  <div className="section-header">
+                    <div className="icon-box assets">
+                      <Settings2 size={14} />
+                    </div>
+                    <div className="label-group">
+                      <span className="section-label">分析模板审计</span>
+                      <span className="section-sub">ANALYSIS_TEMPLATE_LINEAGE</span>
+                    </div>
+                  </div>
+                  <div className="section-content">
+                    <div className="analysis-template-panel compact">
+                      <div className="analysis-meta-grid">
+                        <div>
+                          <span className="analysis-meta-label">模板</span>
+                          <strong>{String(analysis.template)}</strong>
+                        </div>
+                        <div>
+                          <span className="analysis-meta-label">实体口径</span>
+                          <strong>{analysis.entity?.label || analysis.entity?.id}</strong>
+                          <small>{analysis.entity?.column}</small>
+                        </div>
+                        <div>
+                          <span className="analysis-meta-label">时间窗口</span>
+                          <strong>{formatAuditValue(analysis.timeWindow)}</strong>
+                        </div>
+                        <div>
+                          <span className="analysis-meta-label">参数</span>
+                          <strong>{formatAuditValue(analysis.parameters)}</strong>
+                        </div>
+                      </div>
+                      <div className="analysis-event-list">
+                        {analysisEvents.map((event: any) => (
+                          <div key={event.id} className="analysis-event-chip">
+                            <span>{event.name}</span>
+                            <small>{event.actorColumn} / {event.timestampColumn}</small>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {approvalChain.length > 0 && (
                 <div className="audit-section full-width">
                   <div className="section-header">
@@ -427,6 +515,84 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
           display: flex;
           flex-direction: column;
           gap: 20px;
+        }
+
+        .analysis-template-panel {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          padding: 14px;
+          border: 1px solid #DBEAFE;
+          border-radius: 10px;
+          background: #EFF6FF;
+        }
+        .analysis-template-panel.compact {
+          background: #F8FAFC;
+          border-color: #E2E8F0;
+        }
+        .analysis-template-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-family: var(--font-mono);
+          font-size: 10px;
+          font-weight: 800;
+          color: #1D4ED8;
+        }
+        .analysis-meta-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          gap: 10px;
+        }
+        .analysis-meta-grid div {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          min-width: 0;
+        }
+        .analysis-meta-label {
+          font-size: 9px;
+          font-weight: 800;
+          color: #64748B;
+          text-transform: uppercase;
+        }
+        .analysis-meta-grid strong {
+          font-size: 12px;
+          color: #0F172A;
+          overflow-wrap: anywhere;
+        }
+        .analysis-meta-grid small {
+          font-family: var(--font-mono);
+          font-size: 9px;
+          color: #64748B;
+          overflow-wrap: anywhere;
+        }
+        .analysis-event-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .analysis-event-chip {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 130px;
+          max-width: 100%;
+          padding: 8px 10px;
+          border-radius: 8px;
+          background: #FFFFFF;
+          border: 1px solid #BFDBFE;
+        }
+        .analysis-event-chip span {
+          font-size: 11px;
+          font-weight: 800;
+          color: #1E40AF;
+        }
+        .analysis-event-chip small {
+          font-family: var(--font-mono);
+          font-size: 9px;
+          color: #64748B;
+          overflow-wrap: anywhere;
         }
         
         .logic-metadata {

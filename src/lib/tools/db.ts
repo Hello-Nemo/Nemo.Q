@@ -4,7 +4,16 @@ import fs from 'fs';
 import path from 'path';
 import { PostgresDataSource, IDataSource } from '../db-connector';
 import { SQLCompiler } from '../semantic/compiler';
-import { CertificationAudit, Lineage, QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
+import {
+  AnalysisAudit,
+  AnalysisPlan,
+  analysisPlanSchema,
+  CertificationAudit,
+  Lineage,
+  QueryPlan,
+  SemanticLayer,
+  queryPlanSchema
+} from '../semantic/types';
 import { detectSemanticCoverage } from '../semantic/coverage';
 import { buildSqlGuardPolicy, guardSql } from '../sql-guard/guard';
 import {
@@ -106,6 +115,27 @@ const buildSemanticQueryAudit = (args: {
     certificationLevel: args.certification.certificationLevel,
   },
   lineage: args.lineage,
+  isCertified: args.certification.isCertified,
+  certificationLevel: args.certification.certificationLevel,
+  certification: args.certification,
+});
+
+export const buildAnalysisQueryAudit = (args: {
+  sql: string;
+  explanation: string;
+  plan: AnalysisPlan;
+  lineage: Lineage;
+  analysis: AnalysisAudit;
+  certification: CertificationAudit;
+}) => ({
+  sql: args.sql,
+  explanation: args.explanation,
+  plan: {
+    ...args.plan,
+    certificationLevel: args.certification.certificationLevel,
+  },
+  lineage: args.lineage,
+  analysis: args.analysis,
   isCertified: args.certification.isCertified,
   certificationLevel: args.certification.certificationLevel,
   certification: args.certification,
@@ -391,6 +421,54 @@ export const semanticQuery = tool({
       }
     } catch (e: any) {
       return buildSemanticCompilationError(e.message);
+    }
+  },
+});
+
+/**
+ * 分析模板查询：通过 AnalysisPlan 编译复杂分析，避免让 LLM 直接手写治理外 SQL。
+ */
+export const analysisQuery = tool({
+  description: '通过 AnalysisPlan 分析模板执行复杂分析，支持 retention、funnel、cohort、path_sequence。适用于留存、漏斗、cohort 和路径序列等无法表达为普通指标查询的问题。',
+  inputSchema: z.object({
+    explanation: z.string().describe('用自然语言说明本次分析的业务意图与模板口径。'),
+    plan: analysisPlanSchema.describe('结构化的分析计划 (AnalysisPlan)'),
+  }),
+  execute: async ({ plan, explanation }) => {
+    const projectName = process.env.CURRENT_PROJECT || 'default';
+    const semanticLayer = getSemanticLayer(projectName);
+    const compiler = new SQLCompiler(semanticLayer);
+
+    try {
+      const compilationResult = compiler.compileAnalysis(plan as AnalysisPlan);
+      const { sql, lineage, certification, analysis } = compilationResult;
+      console.log('[DEBUG] analysisQuery generated SQL:', sql);
+
+      const ds = getDataSource();
+      try {
+        const result = await ds.executeQuery(sql);
+        return {
+          ...result,
+          audit: buildAnalysisQueryAudit({
+            sql,
+            explanation,
+            plan: plan as AnalysisPlan,
+            lineage,
+            analysis: analysis!,
+            certification,
+          })
+        };
+      } finally {
+        await ds.close();
+      }
+    } catch (e: any) {
+      return {
+        ...buildSemanticCompilationError(e.message),
+        error: `分析查询编译失败: ${e.message}`,
+        code: 'ANALYSIS_COMPILATION_FAILED',
+        hint: '请检查 AnalysisPlan 的 template、事件定义、时间窗口和实体口径；如果该探索无法模板化，允许改用 executeQuery 并提供完整 SQL_AUDIT_PROTOCOL 审计证据。',
+        recoveryActions: ['analysisQuery', 'executeQuery'],
+      };
     }
   },
 });
@@ -725,6 +803,7 @@ export const dbTools = {
   searchTables,
   askClarification,
   semanticQuery,
+  analysisQuery,
   previewQueryPlan,
   confirmQueryPlan,
   cancelQueryPlan,

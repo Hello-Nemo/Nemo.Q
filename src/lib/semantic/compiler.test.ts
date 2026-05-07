@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SQLCompiler } from './compiler';
-import type { QueryPlan, SemanticLayer } from './types';
+import type { AnalysisPlan, QueryPlan, SemanticLayer } from './types';
 
 function loadSemanticLayer(): SemanticLayer {
   return JSON.parse(
@@ -12,6 +12,10 @@ function loadSemanticLayer(): SemanticLayer {
 
 function compile(plan: QueryPlan, layer = loadSemanticLayer()) {
   return new SQLCompiler(layer).compile(plan);
+}
+
+function compileAnalysis(plan: AnalysisPlan, layer = loadSemanticLayer()) {
+  return new SQLCompiler(layer).compileAnalysis(plan);
 }
 
 describe('SQLCompiler deterministic unit tests', () => {
@@ -175,5 +179,133 @@ describe('SQLCompiler deterministic unit tests', () => {
         noJoinLayer
       )
     ).toThrow('无法找到路径连接实体: users');
+  });
+
+  it('compiles retention AnalysisPlan into auditable template SQL', () => {
+    const result = compileAnalysis({
+      intent: 'analysis',
+      template: 'retention',
+      entity: {
+        id: 'users',
+        column: 'users.id',
+        label: '注册用户'
+      },
+      cohortEvent: {
+        id: 'new_user_signup',
+        name: '新用户注册',
+        entityId: 'users',
+        actorColumn: 'users.id',
+        timestampColumn: 'users.joined_at'
+      },
+      returnEvent: {
+        id: 'place_order',
+        name: '下单',
+        entityId: 'orders',
+        actorColumn: 'orders.user_id',
+        timestampColumn: 'orders.order_date'
+      },
+      timeRange: { type: 'preset', value: 'last_30_days' },
+      retentionWindow: { value: 7, unit: 'day' },
+      grain: 'day'
+    });
+
+    expect(result.lineage).toEqual({
+      path: ['users', 'orders'],
+      entities: ['users', 'orders'],
+      metrics: [],
+      dimensions: [],
+      isMultiPass: false,
+      type: 'Analysis'
+    });
+    expect(result.analysis).toMatchObject({
+      template: 'retention',
+      entity: {
+        id: 'users',
+        column: 'users.id',
+        label: '注册用户'
+      },
+      timeWindow: {
+        type: 'preset',
+        value: 'last_30_days'
+      },
+      parameters: {
+        retentionWindow: '7 days',
+        grain: 'day'
+      },
+      events: [
+        {
+          id: 'new_user_signup',
+          name: '新用户注册',
+          entityId: 'users',
+          actorColumn: 'users.id',
+          timestampColumn: 'users.joined_at'
+        },
+        {
+          id: 'place_order',
+          name: '下单',
+          entityId: 'orders',
+          actorColumn: 'orders.user_id',
+          timestampColumn: 'orders.order_date'
+        }
+      ]
+    });
+    expect(result.sql).toMatchInlineSnapshot(`
+      "WITH cohort AS (SELECT users.id AS entity_id, DATE_TRUNC('day', users.joined_at)::date AS cohort_start FROM users WHERE users.joined_at >= CURRENT_DATE - INTERVAL '30 days' AND users.joined_at < CURRENT_DATE + INTERVAL '1 day'), return_events AS (SELECT orders.user_id AS entity_id, orders.order_date AS event_at FROM orders), retention AS (SELECT cohort.cohort_start, COUNT(DISTINCT cohort.entity_id) AS cohort_size, COUNT(DISTINCT return_events.entity_id) AS retained_entities FROM cohort LEFT JOIN return_events ON return_events.entity_id = cohort.entity_id AND return_events.event_at > cohort.cohort_start AND return_events.event_at <= cohort.cohort_start + INTERVAL '7 days' GROUP BY 1) SELECT cohort_start, cohort_size, retained_entities, retained_entities::decimal / NULLIF(cohort_size, 0) AS retention_rate FROM retention ORDER BY cohort_start"
+    `);
+  });
+
+  it('compiles funnel, cohort, and path_sequence analysis templates', () => {
+    const baseEvent = {
+      id: 'signup',
+      name: '注册',
+      entityId: 'users',
+      actorColumn: 'users.id',
+      timestampColumn: 'users.joined_at'
+    };
+    const orderEvent = {
+      id: 'order',
+      name: '下单',
+      entityId: 'orders',
+      actorColumn: 'orders.user_id',
+      timestampColumn: 'orders.order_date'
+    };
+
+    const funnel = compileAnalysis({
+      intent: 'analysis',
+      template: 'funnel',
+      entity: { id: 'users', column: 'users.id' },
+      steps: [baseEvent, orderEvent],
+      timeRange: { type: 'preset', value: 'last_30_days' },
+      conversionWindow: { value: 7, unit: 'day' }
+    });
+
+    expect(funnel.analysis?.template).toBe('funnel');
+    expect(funnel.sql).toContain("SELECT 1 AS step_index, '注册' AS step_name");
+    expect(funnel.sql).toContain("event_at <= step_1_at + INTERVAL '7 days'");
+
+    const cohort = compileAnalysis({
+      intent: 'analysis',
+      template: 'cohort',
+      entity: { id: 'users', column: 'users.id' },
+      cohortEvent: baseEvent,
+      timeRange: { type: 'preset', value: 'last_30_days' },
+      grain: 'month'
+    });
+
+    expect(cohort.analysis?.template).toBe('cohort');
+    expect(cohort.sql).toContain("DATE_TRUNC('month', users.joined_at)::date AS cohort_start");
+
+    const pathSequence = compileAnalysis({
+      intent: 'analysis',
+      template: 'path_sequence',
+      entity: { id: 'users', column: 'users.id' },
+      events: [baseEvent, orderEvent],
+      timeRange: { type: 'preset', value: 'last_30_days' },
+      limit: 5
+    });
+
+    expect(pathSequence.analysis?.template).toBe('path_sequence');
+    expect(pathSequence.sql).toContain('LEAD(event_name) OVER (PARTITION BY entity_id ORDER BY event_at, event_name) AS next_event');
+    expect(pathSequence.sql).toContain('LIMIT 5');
   });
 });

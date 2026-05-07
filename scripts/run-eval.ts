@@ -37,6 +37,7 @@ async function runEval() {
       let executedSql = false;
       let usedExecuteQuery = false;
       let usedSemanticQuery = false;
+      let usedAnalysisQuery = false;
       let usedClarification = false;
       let usedSemanticAtoms = false;
       let hasSemanticGap = false;
@@ -55,8 +56,9 @@ async function runEval() {
             executedSql = true;
             usedExecuteQuery = true;
           }
-          if (call.toolName === 'semanticQuery' || call.toolName === 'previewQueryPlan') {
+          if (call.toolName === 'semanticQuery' || call.toolName === 'previewQueryPlan' || call.toolName === 'analysisQuery') {
             if (call.toolName === 'semanticQuery') usedSemanticQuery = true;
+            if (call.toolName === 'analysisQuery') usedAnalysisQuery = true;
             if (args && args.plan) {
               // 标记使用了语义查询，但不要把 QueryPlan 当成已生成/已执行 SQL。
               semanticTrace += ` [${call.toolName}: ${JSON.stringify(args.plan)}]`;
@@ -74,17 +76,19 @@ async function runEval() {
           if (result.toolName === 'askClarification') usedClarification = true;
           if (result.toolName === 'listSemanticAtoms') usedSemanticAtoms = true;
           if (result.toolName === 'semanticQuery') usedSemanticQuery = true;
+          if (result.toolName === 'analysisQuery') usedAnalysisQuery = true;
 
           // 尝试从审计信息或直接结果中提取生成的 SQL 用于校验
-          if ((result.toolName === 'semanticQuery' || result.toolName === 'previewQueryPlan') && res) {
+          if ((result.toolName === 'semanticQuery' || result.toolName === 'previewQueryPlan' || result.toolName === 'analysisQuery') && res) {
             if ((res as any).audit && (res as any).audit.sql) {
               generatedSql = (res as any).audit.sql;
-              executedSql = result.toolName === 'semanticQuery' || executedSql;
+              executedSql = result.toolName === 'semanticQuery' || result.toolName === 'analysisQuery' || executedSql;
             } else if ((res as any).sql) {
               generatedSql = (res as any).sql;
             }
             if (
               (res as any).code === 'SEMANTIC_COMPILATION_FAILED' ||
+              (res as any).code === 'ANALYSIS_COMPILATION_FAILED' ||
               /未知(指标|维度|过滤字段)|语义层未覆盖/.test(JSON.stringify(res))
             ) {
               hasSemanticGap = true;
@@ -110,6 +114,8 @@ async function runEval() {
       const outputText = String(output || '');
       const queryPath = usedSemanticQuery
         ? 'semantic'
+        : usedAnalysisQuery
+          ? 'analysis_template'
         : semanticCoverageBlocked
           ? 'blocked_direct_sql'
           : usedExecuteQuery
@@ -249,6 +255,7 @@ async function runEval() {
         hasSemanticGap,
         usedExecuteQuery,
         usedSemanticQuery,
+        usedAnalysisQuery,
         semanticCoverageBlocked,
         queryPath
       });

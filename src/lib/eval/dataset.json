@@ -114,6 +114,14 @@
     "criteria": "sales_amount|return_amount|user_country|last_30_days/returns.return_date/orders.order_date|semanticQuery"
   },
   {
+    "id": "p4-new-user-7-day-retention",
+    "category": "Phase 4: Analysis QueryPlan",
+    "difficulty": "hard",
+    "question": "新用户 7 日留存",
+    "gold_sql": "WITH cohort AS (... users.joined_at ...), return_events AS (... orders.order_date ...) SELECT cohort_start, cohort_size, retained_entities, retention_rate ...",
+    "criteria": "analysisQuery|retention|new_user_signup/新用户注册|place_order/下单|users.joined_at|orders.order_date|7 days"
+  },
+  {
     "id": "p1-unknown-gross-margin",
     "category": "Phase 1: 语义层硬校验",
     "difficulty": "hard",

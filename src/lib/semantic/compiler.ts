@@ -1,11 +1,16 @@
 import {
+  AnalysisAudit,
+  AnalysisEvent,
+  AnalysisPlan,
   QueryPlan,
+  QueryFilter,
   SemanticLayer,
   Metric,
   Dimension,
   Relationship,
   CompilationResult,
-  CertificationAudit
+  CertificationAudit,
+  TimeRange
 } from './types';
 
 type CompilationDraft = Omit<CompilationResult, 'certification'>;
@@ -151,6 +156,163 @@ export class SQLCompiler {
     }
 
     return this.attachCertification(result, metrics, dimensions);
+  }
+
+  compileAnalysis(plan: AnalysisPlan): CompilationResult {
+    this.validateAnalysisEntity(plan.entity.id);
+
+    let result: CompilationDraft;
+    switch (plan.template) {
+      case 'retention':
+        result = this.compileRetentionAnalysis(plan);
+        break;
+      case 'funnel':
+        result = this.compileFunnelAnalysis(plan);
+        break;
+      case 'cohort':
+        result = this.compileCohortAnalysis(plan);
+        break;
+      case 'path_sequence':
+        result = this.compilePathSequenceAnalysis(plan);
+        break;
+      default: {
+        const unreachable: never = plan;
+        throw new Error(`不支持的分析模板: ${(unreachable as AnalysisPlan).template}`);
+      }
+    }
+
+    return this.attachAnalysisCertification(result, plan);
+  }
+
+  private compileRetentionAnalysis(
+    plan: Extract<AnalysisPlan, { template: 'retention' }>
+  ): CompilationDraft {
+    const grain = plan.grain ?? 'day';
+    const interval = this.formatAnalysisInterval(plan.retentionWindow);
+    const cohortSource = this.buildAnalysisEventSource(plan.cohortEvent);
+    const returnSource = this.buildAnalysisEventSource(plan.returnEvent);
+    const cohortWhere = this.buildAnalysisEventWhere(
+      plan.cohortEvent,
+      plan.timeRange,
+      new Set(cohortSource.path)
+    );
+    const returnWhere = this.buildAnalysisEventWhere(
+      plan.returnEvent,
+      undefined,
+      new Set(returnSource.path)
+    );
+
+    const ctes = [
+      `cohort AS (SELECT ${plan.cohortEvent.actorColumn} AS entity_id, DATE_TRUNC('${grain}', ${plan.cohortEvent.timestampColumn})::date AS cohort_start ${cohortSource.fromClause}${cohortWhere})`,
+      `return_events AS (SELECT ${plan.returnEvent.actorColumn} AS entity_id, ${plan.returnEvent.timestampColumn} AS event_at ${returnSource.fromClause}${returnWhere})`,
+      `retention AS (SELECT cohort.cohort_start, COUNT(DISTINCT cohort.entity_id) AS cohort_size, COUNT(DISTINCT return_events.entity_id) AS retained_entities FROM cohort LEFT JOIN return_events ON return_events.entity_id = cohort.entity_id AND return_events.event_at > cohort.cohort_start AND return_events.event_at <= cohort.cohort_start + INTERVAL '${interval}' GROUP BY 1)`
+    ];
+    const sql = `WITH ${ctes.join(', ')} SELECT cohort_start, cohort_size, retained_entities, retained_entities::decimal / NULLIF(cohort_size, 0) AS retention_rate FROM retention ORDER BY cohort_start`;
+
+    const events = [plan.cohortEvent, plan.returnEvent];
+    return {
+      sql,
+      lineage: this.buildAnalysisLineage(plan, events),
+      analysis: this.buildAnalysisAudit(plan, events, {
+        retentionWindow: interval,
+        grain
+      })
+    };
+  }
+
+  private compileFunnelAnalysis(
+    plan: Extract<AnalysisPlan, { template: 'funnel' }>
+  ): CompilationDraft {
+    const ctes: string[] = [];
+    const interval = plan.conversionWindow
+      ? this.formatAnalysisInterval(plan.conversionWindow)
+      : undefined;
+
+    plan.steps.forEach((step, index) => {
+      const stepNumber = index + 1;
+      const source = this.buildAnalysisEventSource(step);
+      const where = this.buildAnalysisEventWhere(
+        step,
+        index === 0 ? plan.timeRange : undefined,
+        new Set(source.path)
+      );
+
+      ctes.push(
+        `step_${stepNumber}_events AS (SELECT ${step.actorColumn} AS entity_id, ${step.timestampColumn} AS event_at ${source.fromClause}${where})`
+      );
+
+      if (index === 0) {
+        ctes.push(
+          `step_1 AS (SELECT entity_id, MIN(event_at) AS step_1_at FROM step_1_events GROUP BY 1)`
+        );
+        return;
+      }
+
+      const previousStep = stepNumber - 1;
+      const windowCondition = interval
+        ? ` AND step_${stepNumber}_events.event_at <= step_1_at + INTERVAL '${interval}'`
+        : '';
+      ctes.push(
+        `step_${stepNumber} AS (SELECT step_${previousStep}.entity_id, step_${previousStep}.step_1_at, MIN(step_${stepNumber}_events.event_at) AS step_${stepNumber}_at FROM step_${previousStep} JOIN step_${stepNumber}_events ON step_${stepNumber}_events.entity_id = step_${previousStep}.entity_id AND step_${stepNumber}_events.event_at >= step_${previousStep}.step_${previousStep}_at${windowCondition} GROUP BY 1, 2)`
+      );
+    });
+
+    const finalSelect = plan.steps
+      .map((step, index) =>
+        `SELECT ${index + 1} AS step_index, '${this.escapeSqlString(step.name)}' AS step_name, COUNT(*) AS entity_count FROM step_${index + 1}`
+      )
+      .join(' UNION ALL ');
+
+    return {
+      sql: `WITH ${ctes.join(', ')} ${finalSelect}`,
+      lineage: this.buildAnalysisLineage(plan, plan.steps),
+      analysis: this.buildAnalysisAudit(plan, plan.steps, {
+        conversionWindow: interval ?? 'unbounded',
+        stepCount: plan.steps.length
+      })
+    };
+  }
+
+  private compileCohortAnalysis(
+    plan: Extract<AnalysisPlan, { template: 'cohort' }>
+  ): CompilationDraft {
+    const grain = plan.grain ?? 'month';
+    const source = this.buildAnalysisEventSource(plan.cohortEvent);
+    const where = this.buildAnalysisEventWhere(
+      plan.cohortEvent,
+      plan.timeRange,
+      new Set(source.path)
+    );
+    const sql = `SELECT DATE_TRUNC('${grain}', ${plan.cohortEvent.timestampColumn})::date AS cohort_start, COUNT(DISTINCT ${plan.cohortEvent.actorColumn}) AS entity_count ${source.fromClause}${where} GROUP BY 1 ORDER BY cohort_start`;
+
+    return {
+      sql,
+      lineage: this.buildAnalysisLineage(plan, [plan.cohortEvent]),
+      analysis: this.buildAnalysisAudit(plan, [plan.cohortEvent], {
+        grain
+      })
+    };
+  }
+
+  private compilePathSequenceAnalysis(
+    plan: Extract<AnalysisPlan, { template: 'path_sequence' }>
+  ): CompilationDraft {
+    const eventSelects = plan.events.map(event => {
+      const source = this.buildAnalysisEventSource(event);
+      const where = this.buildAnalysisEventWhere(event, plan.timeRange, new Set(source.path));
+      return `SELECT ${event.actorColumn} AS entity_id, ${event.timestampColumn} AS event_at, '${this.escapeSqlString(event.name)}' AS event_name ${source.fromClause}${where}`;
+    });
+    const limitClause = plan.limit ? ` LIMIT ${plan.limit}` : '';
+    const sql = `WITH events AS (${eventSelects.join(' UNION ALL ')}), sequenced AS (SELECT entity_id, event_name, event_at, LEAD(event_name) OVER (PARTITION BY entity_id ORDER BY event_at, event_name) AS next_event FROM events) SELECT event_name, next_event, COUNT(*) AS transition_count FROM sequenced WHERE next_event IS NOT NULL GROUP BY 1, 2 ORDER BY transition_count DESC${limitClause}`;
+
+    return {
+      sql,
+      lineage: this.buildAnalysisLineage(plan, plan.events),
+      analysis: this.buildAnalysisAudit(plan, plan.events, {
+        eventCount: plan.events.length,
+        limit: plan.limit ?? 'none'
+      })
+    };
   }
 
   private resolveMetrics(plan: QueryPlan): Metric[] {
@@ -421,6 +583,135 @@ export class SQLCompiler {
     };
   }
 
+  private buildAnalysisEventSource(event: AnalysisEvent): { fromClause: string; path: string[] } {
+    this.validateAnalysisEvent(event);
+    const requiredEntityIds = new Set<string>([event.entityId]);
+
+    (event.filters ?? []).forEach(filter => {
+      const dimension = this.semanticLayer.dimensions[filter.field];
+      if (!dimension) {
+        throw new Error(`未知分析过滤字段: ${filter.field}`);
+      }
+      requiredEntityIds.add(dimension.entityId);
+    });
+
+    const path = this.pathFinder.findBestPath(requiredEntityIds);
+    return {
+      fromClause: this.buildJoinClause(path),
+      path
+    };
+  }
+
+  private buildAnalysisEventWhere(
+    event: AnalysisEvent,
+    timeRange: TimeRange | undefined,
+    availableEntityIds: Set<string>
+  ): string {
+    const conditions: string[] = [];
+
+    if (timeRange) {
+      conditions.push(...this.buildTimeRangeConditions(event.timestampColumn, timeRange));
+    }
+
+    (event.filters ?? []).forEach(filter => {
+      conditions.push(this.buildFilterCondition(filter, availableEntityIds, '分析过滤字段'));
+    });
+
+    return conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  }
+
+  private buildAnalysisLineage(plan: AnalysisPlan, events: AnalysisEvent[]): CompilationDraft['lineage'] {
+    const requiredEntityIds = this.collectAnalysisEntityIds(plan, events);
+    const path = this.pathFinder.findBestPath(requiredEntityIds);
+
+    return {
+      path,
+      entities: path,
+      metrics: [],
+      dimensions: this.collectAnalysisFilterDimensions(events).map(dimension => dimension.id),
+      isMultiPass: false,
+      type: 'Analysis'
+    };
+  }
+
+  private buildAnalysisAudit(
+    plan: AnalysisPlan,
+    events: AnalysisEvent[],
+    parameters: Record<string, string | number | boolean | undefined>
+  ): AnalysisAudit {
+    const cleanParameters = Object.entries(parameters).reduce<Record<string, string | number | boolean>>(
+      (acc, [key, value]) => {
+        if (value !== undefined) acc[key] = value;
+        return acc;
+      },
+      {}
+    );
+
+    return {
+      template: plan.template,
+      entity: plan.entity,
+      timeWindow: plan.timeRange,
+      parameters: cleanParameters,
+      events: events.map(event => ({
+        id: event.id,
+        name: event.name,
+        entityId: event.entityId,
+        actorColumn: event.actorColumn,
+        timestampColumn: event.timestampColumn,
+        ...(event.filters?.length ? { filters: event.filters } : {})
+      }))
+    };
+  }
+
+  private collectAnalysisEntityIds(plan: AnalysisPlan, events: AnalysisEvent[]): Set<string> {
+    const requiredEntityIds = new Set<string>([plan.entity.id]);
+
+    events.forEach(event => {
+      this.validateAnalysisEvent(event);
+      requiredEntityIds.add(event.entityId);
+      (event.filters ?? []).forEach(filter => {
+        const dimension = this.semanticLayer.dimensions[filter.field];
+        if (!dimension) {
+          throw new Error(`未知分析过滤字段: ${filter.field}`);
+        }
+        requiredEntityIds.add(dimension.entityId);
+      });
+    });
+
+    return requiredEntityIds;
+  }
+
+  private collectAnalysisFilterDimensions(events: AnalysisEvent[]): Dimension[] {
+    const dimensions = new Map<string, Dimension>();
+
+    events.forEach(event => {
+      (event.filters ?? []).forEach(filter => {
+        const dimension = this.semanticLayer.dimensions[filter.field];
+        if (!dimension) {
+          throw new Error(`未知分析过滤字段: ${filter.field}`);
+        }
+        dimensions.set(dimension.id, dimension);
+      });
+    });
+
+    return Array.from(dimensions.values());
+  }
+
+  private validateAnalysisEntity(entityId: string): void {
+    if (!this.semanticLayer.entities[entityId]) {
+      throw new Error(`未知分析实体: ${entityId}`);
+    }
+  }
+
+  private validateAnalysisEvent(event: AnalysisEvent): void {
+    this.validateAnalysisEntity(event.entityId);
+  }
+
+  private formatAnalysisInterval(window: { value: number; unit: 'day' | 'week' | 'month' }): string {
+    const unit = window.value === 1 ? window.unit : `${window.unit}s`;
+    return `${window.value} ${unit}`;
+  }
+
   private buildJoinClause(path: string[]): string {
     if (path.length === 0) return '';
     const baseEntity = this.semanticLayer.entities[path[0]];
@@ -499,6 +790,64 @@ export class SQLCompiler {
     return { ...result, certification };
   }
 
+  private attachAnalysisCertification(
+    result: CompilationDraft,
+    plan: AnalysisPlan
+  ): CompilationResult {
+    const events = this.getAnalysisEvents(plan);
+    const dimensions = this.collectAnalysisFilterDimensions(events);
+    const relationships = this.resolveRelationshipsForPath(result.lineage.path);
+    const dimensionAudit = dimensions.map(dimension => ({
+      id: dimension.id,
+      name: dimension.name,
+      certified: dimension.certified === true
+    }));
+    const relationshipAudit = relationships.map(relationship => ({
+      fromEntityId: relationship.fromEntityId,
+      toEntityId: relationship.toEntityId,
+      type: relationship.type,
+      joinOn: relationship.joinOn,
+      certified: relationship.certified === true
+    }));
+    const reasons = [
+      ...dimensionAudit
+        .filter(dimension => !dimension.certified)
+        .map(dimension => `dimension ${dimension.id} is not certified`),
+      ...relationshipAudit
+        .filter(relationship => !relationship.certified)
+        .map(relationship => `relationship ${relationship.fromEntityId}->${relationship.toEntityId} is not certified`)
+    ];
+    const isCertified = reasons.length === 0;
+    const certification: CertificationAudit = {
+      isCertified,
+      certificationLevel: isCertified ? 'certified_plan' : 'semantic_compiled',
+      status: isCertified ? 'certified' : 'exploratory',
+      reasons,
+      metrics: [],
+      dimensions: dimensionAudit,
+      relationships: relationshipAudit
+    };
+
+    return { ...result, certification };
+  }
+
+  private getAnalysisEvents(plan: AnalysisPlan): AnalysisEvent[] {
+    switch (plan.template) {
+      case 'retention':
+        return [plan.cohortEvent, plan.returnEvent];
+      case 'funnel':
+        return plan.steps;
+      case 'cohort':
+        return [plan.cohortEvent];
+      case 'path_sequence':
+        return plan.events;
+      default: {
+        const unreachable: never = plan;
+        throw new Error(`不支持的分析模板: ${(unreachable as AnalysisPlan).template}`);
+      }
+    }
+  }
+
   private resolveRelationshipsForPath(path: string[]): Relationship[] {
     if (path.length <= 1) return [];
 
@@ -530,31 +879,42 @@ export class SQLCompiler {
     }
 
     plan.filters.forEach(f => {
-      const dim = this.semanticLayer.dimensions[f.field];
-      if (availableEntityIds && !availableEntityIds.has(dim.entityId)) {
-        throw new Error(`过滤字段不属于当前 CTE 路径: ${f.field}`);
-      }
-      const actualField = dim.column;
-      if (f.operator === 'between') {
-        if (!Array.isArray(f.value) || f.value.length !== 2) {
-          throw new Error(`between 过滤器需要两个边界值: ${f.field}`);
-        }
-        conditions.push(`${actualField} BETWEEN ${this.formatLiteral(f.value[0])} AND ${this.formatLiteral(f.value[1])}`);
-        return;
-      }
-
-      if (f.operator === 'in') {
-        if (!Array.isArray(f.value)) {
-          throw new Error(`in 过滤器需要数组值: ${f.field}`);
-        }
-        conditions.push(`${actualField} IN (${f.value.map(v => this.formatLiteral(v)).join(', ')})`);
-        return;
-      }
-
-      conditions.push(`${actualField} ${f.operator} ${this.formatLiteral(f.value)}`);
+      conditions.push(this.buildFilterCondition(f, availableEntityIds));
     });
 
     return conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  }
+
+  private buildFilterCondition(
+    filter: QueryFilter,
+    availableEntityIds?: Set<string>,
+    fieldLabel = '过滤字段'
+  ): string {
+    const dim = this.semanticLayer.dimensions[filter.field];
+    if (!dim) {
+      throw new Error(`未知${fieldLabel}: ${filter.field}`);
+    }
+
+    if (availableEntityIds && !availableEntityIds.has(dim.entityId)) {
+      throw new Error(`${fieldLabel}不属于当前 CTE 路径: ${filter.field}`);
+    }
+
+    const actualField = dim.column;
+    if (filter.operator === 'between') {
+      if (!Array.isArray(filter.value) || filter.value.length !== 2) {
+        throw new Error(`between 过滤器需要两个边界值: ${filter.field}`);
+      }
+      return `${actualField} BETWEEN ${this.formatLiteral(filter.value[0])} AND ${this.formatLiteral(filter.value[1])}`;
+    }
+
+    if (filter.operator === 'in') {
+      if (!Array.isArray(filter.value)) {
+        throw new Error(`in 过滤器需要数组值: ${filter.field}`);
+      }
+      return `${actualField} IN (${filter.value.map(v => this.formatLiteral(v)).join(', ')})`;
+    }
+
+    return `${actualField} ${filter.operator} ${this.formatLiteral(filter.value)}`;
   }
 
   private resolveTimeColumn(plan: QueryPlan, metrics: Metric[]): string {

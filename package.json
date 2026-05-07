@@ -11,11 +11,12 @@
     "onboard": "tsx scripts/onboard-db.ts",
     "build": "next build",
     "start": "next start",
-    "test": "pnpm test:compiler && pnpm test:semantic && pnpm test:sql-guard && pnpm test:query-plan-confirmation && pnpm test:query-plan-ui",
+    "test": "pnpm test:compiler && pnpm test:semantic && pnpm test:sql-guard && pnpm test:query-plan-confirmation && pnpm test:analysis-query && pnpm test:query-plan-ui",
     "test:compiler": "vitest run",
     "test:semantic": "tsx src/lib/semantic/test-compiler.ts",
     "test:sql-guard": "tsx src/lib/sql-guard/test-sql-guard.ts && tsx src/lib/tools/test-execute-query-guard.ts",
     "test:query-plan-confirmation": "tsx src/lib/tools/test-query-plan-confirmation.ts",
+    "test:analysis-query": "tsx src/lib/tools/test-analysis-query.ts",
     "test:query-plan-ui": "tsx src/lib/test-query-plan-ui.ts"
   },
   "keywords": [],

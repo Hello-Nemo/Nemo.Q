@@ -800,6 +800,7 @@ export default function ChatPage() {
       }
 
       case 'tool-semanticQuery':
+      case 'tool-analysisQuery':
       case 'tool-confirmQueryPlan':
       case 'tool-executeQuery': {
         const toolPart = part as any;

@@ -64,25 +64,29 @@ export interface SemanticLayer {
 /**
  * Query Plan (IR) 定义
  */
+export const timeRangeSchema = z.object({
+  type: z.enum(['preset', 'absolute']),
+  value: z.string().optional(),
+  start: z.string().optional(),
+  end: z.string().optional(),
+  column: z.string().optional(),
+});
+
+export const queryFilterSchema = z.object({
+  field: z.string(),
+  operator: z.enum(['=', '!=', '>', '<', '>=', '<=', 'in', 'between']),
+  value: z.any(),
+});
+
 export const queryPlanSchema = z.object({
   intent: z.enum(['metric_query', 'exploration', 'comparison']),
   metrics: z.array(z.object({ id: z.string() })),
   dimensions: z.array(z.object({ id: z.string() })),
-  timeRange: z.object({
-    type: z.enum(['preset', 'absolute']),
-    value: z.string().optional(),
-    start: z.string().optional(),
-    end: z.string().optional(),
-    column: z.string().optional(),
-  }).optional(),
+  timeRange: timeRangeSchema.optional(),
   comparison: z.object({
     type: z.enum(['YoY', 'MoM', 'PoP']),
   }).optional(),
-  filters: z.array(z.object({
-    field: z.string(),
-    operator: z.enum(['=', '!=', '>', '<', '>=', '<=', 'in', 'between']),
-    value: z.any(),
-  })),
+  filters: z.array(queryFilterSchema),
   orderBy: z.array(z.object({
     field: z.string(),
     direction: z.enum(['asc', 'desc']),
@@ -91,6 +95,85 @@ export const queryPlanSchema = z.object({
 });
 
 export type QueryPlan = z.infer<typeof queryPlanSchema>;
+export type QueryFilter = z.infer<typeof queryFilterSchema>;
+export type TimeRange = z.infer<typeof timeRangeSchema>;
+
+const analysisWindowSchema = z.object({
+  value: z.number().int().positive(),
+  unit: z.enum(['day', 'week', 'month']),
+});
+
+const analysisGrainSchema = z.enum(['day', 'week', 'month']);
+
+const analysisEntitySchema = z.object({
+  id: z.string(),
+  column: z.string(),
+  label: z.string().optional(),
+});
+
+export const analysisEventSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  entityId: z.string(),
+  actorColumn: z.string(),
+  timestampColumn: z.string(),
+  filters: z.array(queryFilterSchema).optional(),
+});
+
+const analysisBaseSchema = z.object({
+  intent: z.literal('analysis'),
+  entity: analysisEntitySchema,
+  timeRange: timeRangeSchema.optional(),
+});
+
+export const analysisPlanSchema = z.discriminatedUnion('template', [
+  analysisBaseSchema.extend({
+    template: z.literal('retention'),
+    cohortEvent: analysisEventSchema,
+    returnEvent: analysisEventSchema,
+    retentionWindow: analysisWindowSchema,
+    grain: analysisGrainSchema.optional(),
+  }),
+  analysisBaseSchema.extend({
+    template: z.literal('funnel'),
+    steps: z.array(analysisEventSchema).min(2),
+    conversionWindow: analysisWindowSchema.optional(),
+  }),
+  analysisBaseSchema.extend({
+    template: z.literal('cohort'),
+    cohortEvent: analysisEventSchema,
+    grain: analysisGrainSchema.optional(),
+  }),
+  analysisBaseSchema.extend({
+    template: z.literal('path_sequence'),
+    events: z.array(analysisEventSchema).min(2),
+    limit: z.number().int().positive().optional(),
+  }),
+]);
+
+export type AnalysisPlan = z.infer<typeof analysisPlanSchema>;
+export type AnalysisEvent = z.infer<typeof analysisEventSchema>;
+
+export interface AnalysisAuditEvent {
+  id: string;
+  name: string;
+  entityId: string;
+  actorColumn: string;
+  timestampColumn: string;
+  filters?: QueryFilter[];
+}
+
+export interface AnalysisAudit {
+  template: AnalysisPlan['template'];
+  entity: {
+    id: string;
+    column: string;
+    label?: string;
+  };
+  timeWindow?: TimeRange;
+  parameters: Record<string, string | number | boolean>;
+  events: AnalysisAuditEvent[];
+}
 
 export interface Lineage {
   path: string[];
@@ -98,7 +181,7 @@ export interface Lineage {
   metrics: string[];
   dimensions: string[];
   isMultiPass: boolean;
-  type: 'SinglePass' | 'MultiPass' | 'Comparison';
+  type: 'SinglePass' | 'MultiPass' | 'Comparison' | 'Analysis';
 }
 
 export interface CertificationMetricAudit {
@@ -138,6 +221,7 @@ export interface CompilationResult {
   sql: string;
   lineage: Lineage;
   certification: CertificationAudit;
+  analysis?: AnalysisAudit;
 }
 
 export interface CompiledQuery {
