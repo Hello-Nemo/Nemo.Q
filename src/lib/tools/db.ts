@@ -5,6 +5,7 @@ import path from 'path';
 import { PostgresDataSource, IDataSource } from '../db-connector';
 import { SQLCompiler } from '../semantic/compiler';
 import { QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
+import { detectSemanticCoverage } from '../semantic/coverage';
 import { buildSqlGuardPolicy, guardSql } from '../sql-guard/guard';
 
 
@@ -67,12 +68,13 @@ export const getSchema = tool({
 export const executeQuery = tool({
   description: '执行生成的探索性 SQL 查询语句并返回结果。仅限通过 SQL Guard 的 SELECT 或 WITH ... SELECT 查询。',
   inputSchema: z.object({
+    question: z.string().optional().describe('用户原始问题。用于在执行前判断是否命中语义层认证指标；如果是标准指标查询，应改用 semanticQuery。'),
     explanation: z.string().min(10).describe('用自然语言详细说明取数逻辑。必须包含：关联了哪些表、核心过滤条件是什么、为什么要这样取。严禁使用“查询数据”等占位符。'),
     assumptions: z.array(z.string()).min(1).describe('执行此查询时的业务边界假设。例如：["活跃用户定义为30天内有订单","销售额已剔除已取消订单"]。严禁使用占位符。'),
     sql: z.string().describe('要执行的 PostgreSQL SELECT 语句'),
   }),
-  execute: async ({ sql, explanation, assumptions }) => {
-    console.log('[DEBUG] executeQuery called with:', { sql, explanation, assumptions });
+  execute: async ({ sql, explanation, assumptions, question }) => {
+    console.log('[DEBUG] executeQuery called with:', { sql, explanation, assumptions, question });
     
     // 强制执行 SQL_AUDIT_PROTOCOL 校验
     if (!explanation || explanation.length < 10 || !assumptions || assumptions.length === 0) {
@@ -113,6 +115,36 @@ export const executeQuery = tool({
       };
     }
 
+    const semanticCoverage = detectSemanticCoverage({
+      sql: guardResult.sql,
+      semanticLayer,
+      question,
+      explanation,
+      assumptions,
+      fields: guardResult.audit.fields
+    });
+
+    if (semanticCoverage.coverageStatus === 'failed') {
+      return {
+        error: semanticCoverage.error,
+        code: semanticCoverage.code,
+        executedSql: false,
+        hint: semanticCoverage.hint,
+        recoveryActions: semanticCoverage.recoveryActions,
+        details: semanticCoverage.details,
+        audit: {
+          sql: guardResult.sql,
+          originalSql: guardResult.originalSql,
+          question,
+          explanation,
+          assumptions,
+          guardStatus: guardResult.guardStatus,
+          guard: guardResult.audit,
+          semanticCoverage: semanticCoverage.audit
+        }
+      };
+    }
+
     const ds = getDataSource();
     try {
       const result = await ds.executeQuery(guardResult.sql);
@@ -121,10 +153,12 @@ export const executeQuery = tool({
         audit: {
           sql: guardResult.sql,
           originalSql: guardResult.originalSql,
+          question,
           explanation,
           assumptions,
           guardStatus: guardResult.guardStatus,
           guard: guardResult.audit,
+          semanticCoverage: semanticCoverage.audit,
           isCertified: false
         }
       };
@@ -142,10 +176,12 @@ export const executeQuery = tool({
         audit: {
           sql: guardResult.sql,
           originalSql: guardResult.originalSql,
+          question,
           explanation,
           assumptions,
           guardStatus: guardResult.guardStatus,
           guard: guardResult.audit,
+          semanticCoverage: semanticCoverage.audit,
           isCertified: false
         }
       };

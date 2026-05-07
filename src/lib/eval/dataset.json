@@ -8,6 +8,24 @@
     "criteria": "country|China/中国"
   },
   {
+    "id": "p2-semantic-coverage-sales-by-country",
+    "category": "Phase 2: 语义覆盖拦截",
+    "difficulty": "medium",
+    "question": "各国家销售额是多少？",
+    "gold_sql": "N/A - 标准指标 sales_amount + user_country 应通过 semanticQuery，不允许 executeQuery 绕过语义层",
+    "criteria": "sales_amount/销售额|user_country/country/国家|semanticQuery/SEMANTIC_COVERAGE_REQUIRED/该查询应使用 semanticQuery",
+    "expectedBehavior": "semantic_required"
+  },
+  {
+    "id": "p2-semantic-coverage-users-from-china",
+    "category": "Phase 2: 语义覆盖拦截",
+    "difficulty": "easy",
+    "question": "列出所有来自中国的用户",
+    "gold_sql": "SELECT users.id, users.username, users.country FROM users WHERE users.country IN ('China', '中国')",
+    "criteria": "executeQuery|users/user|country|China/中国",
+    "expectedBehavior": "direct_sql_allowed"
+  },
+  {
     "id": "q2",
     "category": "指标计算",
     "difficulty": "medium",

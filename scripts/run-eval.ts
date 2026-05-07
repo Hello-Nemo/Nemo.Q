@@ -9,7 +9,7 @@ interface TestCase {
   question: string;
   gold_sql: string;
   criteria: string;
-  expectedBehavior?: 'sql' | 'semantic_gap';
+  expectedBehavior?: 'sql' | 'semantic_gap' | 'semantic_required' | 'direct_sql_allowed';
 }
 
 async function runEval() {
@@ -35,9 +35,12 @@ async function runEval() {
       let hasError = false;
       let usedSampling = false;
       let executedSql = false;
+      let usedExecuteQuery = false;
+      let usedSemanticQuery = false;
       let usedClarification = false;
       let usedSemanticAtoms = false;
       let hasSemanticGap = false;
+      let semanticCoverageBlocked = false;
       const stepSummary: string[] = [];
 
       steps.forEach((step, idx) => {
@@ -50,8 +53,10 @@ async function runEval() {
           if (call.toolName === 'executeQuery') {
             if (args) generatedSql = args.sql;
             executedSql = true;
+            usedExecuteQuery = true;
           }
           if (call.toolName === 'semanticQuery' || call.toolName === 'previewQueryPlan') {
+            if (call.toolName === 'semanticQuery') usedSemanticQuery = true;
             if (args && args.plan) {
               // 标记使用了语义查询，但不要把 QueryPlan 当成已生成/已执行 SQL。
               semanticTrace += ` [${call.toolName}: ${JSON.stringify(args.plan)}]`;
@@ -68,6 +73,7 @@ async function runEval() {
           const res = (result as any).output || (result as any).result;
           if (result.toolName === 'askClarification') usedClarification = true;
           if (result.toolName === 'listSemanticAtoms') usedSemanticAtoms = true;
+          if (result.toolName === 'semanticQuery') usedSemanticQuery = true;
 
           // 尝试从审计信息或直接结果中提取生成的 SQL 用于校验
           if ((result.toolName === 'semanticQuery' || result.toolName === 'previewQueryPlan') && res) {
@@ -87,6 +93,9 @@ async function runEval() {
 
           if (res && (res as any).error) {
             stepSummary[idx] += ` (Error: ${(res as any).error})`;
+            if ((res as any).code === 'SEMANTIC_COVERAGE_REQUIRED') {
+              semanticCoverageBlocked = true;
+            }
             if (result.toolName === 'executeQuery' || result.toolName === 'semanticQuery') {
               hasError = true;
             }
@@ -99,9 +108,17 @@ async function runEval() {
       const reasons = [];
       const expectedBehavior = testCase.expectedBehavior || 'sql';
       const outputText = String(output || '');
+      const queryPath = usedSemanticQuery
+        ? 'semantic'
+        : semanticCoverageBlocked
+          ? 'blocked_direct_sql'
+          : usedExecuteQuery
+            ? 'direct_sql'
+            : 'none';
       const evaluationText = [
         generatedSql,
         semanticTrace,
+        queryPath,
         stepSummary.join(' '),
         outputText
       ].join(' ');
@@ -112,7 +129,56 @@ async function runEval() {
         return subParts.some(sp => evaluationText.toLowerCase().includes(sp.toLowerCase()));
       });
 
-      if (expectedBehavior === 'semantic_gap') {
+      if (expectedBehavior === 'semantic_required') {
+        if (usedSemanticQuery && !usedExecuteQuery) {
+          score += 50;
+          reasons.push('使用 semanticQuery，未尝试直连 SQL');
+        } else if (semanticCoverageBlocked) {
+          score += 35;
+          reasons.push('直连 SQL 被语义覆盖拦截');
+        } else if (usedExecuteQuery) {
+          reasons.push('标准指标错误走了未拦截的 executeQuery');
+        } else {
+          reasons.push('未走语义查询路径');
+        }
+
+        if (usedSemanticAtoms || usedSemanticQuery || semanticCoverageBlocked) {
+          score += 20;
+          reasons.push('触发语义层工具或拦截恢复路径');
+        } else {
+          reasons.push('未触发语义层恢复路径');
+        }
+
+        if (matchesCriteria) {
+          score += 30;
+          reasons.push('语义口径匹配');
+        } else {
+          reasons.push('语义口径缺失');
+        }
+      } else if (expectedBehavior === 'direct_sql_allowed') {
+        if (usedExecuteQuery && !semanticCoverageBlocked && !hasError) {
+          score += 50;
+          reasons.push('明细查询允许 executeQuery');
+        } else if (semanticCoverageBlocked) {
+          reasons.push('明细查询被错误语义拦截');
+        } else {
+          reasons.push('未验证 direct SQL 放行路径');
+        }
+
+        if (!usedSemanticQuery) {
+          score += 20;
+          reasons.push('未强制转语义指标路径');
+        } else {
+          reasons.push('明细查询走了语义查询路径');
+        }
+
+        if (matchesCriteria) {
+          score += 30;
+          reasons.push('明细条件匹配');
+        } else {
+          reasons.push('明细条件缺失');
+        }
+      } else if (expectedBehavior === 'semantic_gap') {
         if (!executedSql) {
           score += 40;
           reasons.push('未执行 SQL');
@@ -180,7 +246,11 @@ async function runEval() {
         executedSql,
         usedClarification,
         usedSemanticAtoms,
-        hasSemanticGap
+        hasSemanticGap,
+        usedExecuteQuery,
+        usedSemanticQuery,
+        semanticCoverageBlocked,
+        queryPath
       });
 
       console.log(`   - 步骤: ${stepSummary.join(' -> ')}`);
