@@ -5,7 +5,10 @@
     "difficulty": "easy",
     "question": "列出所有来自中国的用户",
     "gold_sql": "SELECT * FROM users WHERE country IN ('China', '中国')",
-    "criteria": "country|China/中国"
+    "criteria": "country|China/中国",
+    "expectedTools": ["executeQuery"],
+    "forbiddenTools": ["semanticQuery"],
+    "sqlContains": ["WHERE", "country"]
   },
   {
     "id": "p2-semantic-coverage-sales-by-country",
@@ -14,7 +17,9 @@
     "question": "各国家销售额是多少？",
     "gold_sql": "N/A - 标准指标 sales_amount + user_country 应通过 semanticQuery，不允许 executeQuery 绕过语义层",
     "criteria": "sales_amount/销售额|user_country/country/国家|semanticQuery/SEMANTIC_COVERAGE_REQUIRED/该查询应使用 semanticQuery",
-    "expectedBehavior": "semantic_required"
+    "expectedBehavior": "semantic_required",
+    "expectedTools": ["semanticQuery"],
+    "forbiddenTools": ["executeQuery"]
   },
   {
     "id": "p2-semantic-coverage-users-from-china",
@@ -23,7 +28,9 @@
     "question": "列出所有来自中国的用户",
     "gold_sql": "SELECT users.id, users.username, users.country FROM users WHERE users.country IN ('China', '中国')",
     "criteria": "executeQuery|users/user|country|China/中国",
-    "expectedBehavior": "direct_sql_allowed"
+    "expectedBehavior": "direct_sql_allowed",
+    "expectedTools": ["executeQuery"],
+    "sqlContains": ["FROM users", "country"]
   },
   {
     "id": "q2",
@@ -31,7 +38,9 @@
     "difficulty": "medium",
     "question": "计算上个月的总销售额",
     "gold_sql": "SELECT SUM(total_price) FROM orders WHERE order_date >= ...",
-    "criteria": "SUM|total_price|order_date"
+    "criteria": "SUM|total_price|order_date",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["SUM", "total_price"]
   },
   {
     "id": "q3",
@@ -39,7 +48,9 @@
     "difficulty": "hard",
     "question": "找出购买过 Electronics 类产品次数最多的前 3 名用户",
     "gold_sql": "SELECT u.username, COUNT(o.id) FROM users u JOIN orders o ON u.id = o.user_id ...",
-    "criteria": "JOIN|category|电子产品/Electronics|COUNT|LIMIT"
+    "criteria": "JOIN|category|电子产品/Electronics|COUNT|LIMIT",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["JOIN", "COUNT", "LIMIT", "3"]
   },
   {
     "id": "p2-aov",
@@ -47,23 +58,9 @@
     "difficulty": "medium",
     "question": "我想看下各个国家的客单价 (AOV) 是多少？",
     "gold_sql": "SELECT ... FROM orders JOIN users ... GROUP BY ...",
-    "criteria": "aov|user_country|semanticQuery"
-  },
-  {
-    "id": "p2-age-group",
-    "category": "Phase 2: 衍生维度",
-    "difficulty": "medium",
-    "question": "按年龄段 (Age Group) 统计一下最近一个月的订单量。",
-    "gold_sql": "SELECT ... CASE WHEN ... END ... FROM orders JOIN users ...",
-    "criteria": "age_group|order_count|last_month|semanticQuery"
-  },
-  {
-    "id": "p2-mom",
-    "category": "Phase 2: 时间智能",
-    "difficulty": "hard",
-    "question": "对比一下最近一个月和上个月的销售额变化。",
-    "gold_sql": "WITH current_period AS ... historical_period AS ...",
-    "criteria": "sales_amount|comparison|MoM|semanticQuery"
+    "criteria": "aov|user_country|semanticQuery",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["SUM(orders.total_price)", "COUNT(orders.id)", "GROUP BY"]
   },
   {
     "id": "p2-order-by",
@@ -71,7 +68,9 @@
     "difficulty": "medium",
     "question": "销售额最高的前 3 个国家",
     "gold_sql": "SELECT ... ORDER BY sales_amount DESC LIMIT 3",
-    "criteria": "ORDER BY|DESC|LIMIT|3|semanticQuery"
+    "criteria": "ORDER BY|DESC|LIMIT|3|semanticQuery",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["ORDER BY", "DESC", "LIMIT", "3"]
   },
   {
     "id": "p1-last-7-days-sales",
@@ -79,23 +78,9 @@
     "difficulty": "medium",
     "question": "最近 7 天销售额",
     "gold_sql": "SELECT SUM(orders.total_price) FROM orders WHERE orders.order_date >= CURRENT_DATE - INTERVAL '7 days'",
-    "criteria": "sales_amount|last_7_days/order_date|semanticQuery"
-  },
-  {
-    "id": "p1-absolute-order-count",
-    "category": "Phase 1: 时间范围编译",
-    "difficulty": "medium",
-    "question": "2025-01-01 到 2025-01-31 的订单量",
-    "gold_sql": "SELECT COUNT(orders.id) FROM orders WHERE orders.order_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31'",
-    "criteria": "order_count|2025-01-01|2025-01-31|semanticQuery"
-  },
-  {
-    "id": "p1-last-month-return-amount",
-    "category": "Phase 1: 时间范围编译",
-    "difficulty": "hard",
-    "question": "上个月退货金额",
-    "gold_sql": "SELECT SUM(returns.amount) FROM returns WHERE returns.return_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')",
-    "criteria": "return_amount|last_month/returns.return_date/return_date|semanticQuery"
+    "criteria": "sales_amount|last_7_days/order_date|semanticQuery",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["INTERVAL '7 days'"]
   },
   {
     "id": "p1-multipass-last-month-sales-returns-country",
@@ -103,23 +88,40 @@
     "difficulty": "hard",
     "question": "上个月各国家销售额和退货金额",
     "gold_sql": "WITH fact_0 AS (... orders.order_date ...), fact_1 AS (... returns.return_date ...) SELECT user_country, sales_amount, return_amount ...",
-    "criteria": "sales_amount|return_amount|user_country|last_month/returns.return_date/orders.order_date|semanticQuery"
+    "criteria": "sales_amount|return_amount|user_country|last_month/returns.return_date/orders.order_date|semanticQuery",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["WITH", "FULL OUTER JOIN", "COALESCE"]
   },
   {
-    "id": "p1-multipass-last-30-days-sales-returns-country",
-    "category": "Phase 1: 多事实表认证查询",
+    "id": "p1-yoy-sales",
+    "category": "Phase 2: 时间智能 (NEW)",
     "difficulty": "hard",
-    "question": "按国家统计最近 30 天销售额和退货金额",
-    "gold_sql": "WITH fact_0 AS (... orders.order_date >= CURRENT_DATE - INTERVAL '30 days' ...), fact_1 AS (... returns.return_date >= CURRENT_DATE - INTERVAL '30 days' ...) SELECT user_country, sales_amount, return_amount ...",
-    "criteria": "sales_amount|return_amount|user_country|last_30_days/returns.return_date/orders.order_date|semanticQuery"
+    "question": "对比今年和去年同期的销售额变化",
+    "gold_sql": "WITH current_period AS (...), historical_period AS (...) SELECT (current - prev) / prev ...",
+    "criteria": "YoY|growth|sales_amount|semanticQuery",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["current_period", "historical_period", "INTERVAL '1 year'"]
   },
   {
-    "id": "p4-new-user-7-day-retention",
-    "category": "Phase 4: Analysis QueryPlan",
+    "id": "p1-qtd-orders",
+    "category": "Phase 1: 时间范围编译 (NEW)",
+    "difficulty": "medium",
+    "question": "本季度至今 (QTD) 的订单量是多少？",
+    "gold_sql": "SELECT COUNT(id) FROM orders WHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE)",
+    "criteria": "order_count|QTD|quarter|semanticQuery",
+    "expectedTools": ["semanticQuery"],
+    "sqlContains": ["DATE_TRUNC('quarter'"]
+  },
+  {
+    "id": "p4-lineage-username-category",
+    "category": "Phase 4: 血缘校验 (NEW)",
     "difficulty": "hard",
-    "question": "新用户 7 日留存",
-    "gold_sql": "WITH cohort AS (... users.joined_at ...), return_events AS (... orders.order_date ...) SELECT cohort_start, cohort_size, retained_entities, retention_rate ...",
-    "criteria": "analysisQuery|retention|new_user_signup/新用户注册|place_order/下单|users.joined_at|orders.order_date|7 days"
+    "question": "查看订单明细，要求包含用户名 (username) 和产品类别 (category)",
+    "gold_sql": "SELECT orders.*, users.username, products.category FROM orders JOIN users ON ... JOIN products ON ...",
+    "criteria": "username|category|JOIN|executeQuery",
+    "expectedBehavior": "direct_sql_allowed",
+    "expectedTools": ["executeQuery"],
+    "sqlContains": ["JOIN users", "JOIN products", "username", "category"]
   },
   {
     "id": "p1-unknown-gross-margin",
@@ -128,6 +130,7 @@
     "question": "毛利率是多少？",
     "gold_sql": "N/A - 语义层未定义毛利率指标，应澄清或说明语义层未覆盖",
     "criteria": "gross_margin/毛利率|语义层未覆盖/未知指标/askClarification/listSemanticAtoms",
-    "expectedBehavior": "semantic_gap"
+    "expectedBehavior": "semantic_gap",
+    "expectedTools": ["askClarification/listSemanticAtoms"]
   }
 ]
