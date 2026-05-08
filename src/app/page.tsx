@@ -34,6 +34,9 @@ const InsightCard = dynamic(() => import('@/components/InsightCard'), { ssr: fal
 const InsightCanvas = dynamic(() => import('@/components/InsightCanvas'), { ssr: false });
 const ThinkingIndicator = dynamic(() => import('@/components/ThinkingIndicator'), { ssr: false });
 import Logo from '@/components/Logo';
+import TrustBadge from '@/components/TrustBadge';
+import UserFacingStatus from '@/components/UserFacingStatus';
+import RecoveryActionPanel from '@/components/RecoveryActionPanel';
 import {
   getPreviewDisplayData,
   getPreviewHydrationKey,
@@ -737,13 +740,35 @@ export default function ChatPage() {
                   <p>{displayData.error}</p>
                 </div>
               ) : (
-                <SqlAudit 
-                  sql={displayData?.sql} 
-                  explanation={displayData?.explanation}
-                  assumptions={displayData?.audit?.assumptions || displayData?.assumptions}
-                  debugRaw={{ output: { audit: displayData?.audit || { lineage: displayData?.lineage, plan: displayData?.plan, planId } } }}
-                />
+                <>
+                  {output?.askMeta?.userFacingStatus && (
+                    <UserFacingStatus status={output.askMeta.userFacingStatus} className="mb-2" />
+                  )}
+                  {output?.askMeta?.trustLevel && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrustBadge level={output.askMeta.trustLevel} />
+                    </div>
+                  )}
+                  
+                  <SqlAudit 
+                    sql={displayData?.sql} 
+                    explanation={displayData?.explanation}
+                    assumptions={displayData?.audit?.assumptions || displayData?.assumptions}
+                    debugRaw={{ output: { audit: displayData?.audit || { lineage: displayData?.lineage, plan: displayData?.plan, planId } } }}
+                    defaultExpanded={!output?.askMeta}
+                  />
+
+                  {output?.askMeta?.recoveryActions && output.askMeta.recoveryActions.length > 0 && (
+                    <RecoveryActionPanel 
+                      actions={output.askMeta.recoveryActions} 
+                      onAction={(action) => safeSendMessage({ text: action.label })}
+                      className="mt-4"
+                    />
+                  )}
+                </>
               )}
+
+
 
               {(!output || output?.requires_action) && !displayData?.error && (
                 actionState === 'confirmed' ? (
@@ -900,13 +925,31 @@ export default function ChatPage() {
         return (
           <div key={`part-query-${i}`} className="part-unit flow-part animate-fade-in">
             <div className="component-container">
+              {output?.askMeta?.userFacingStatus && (
+                <UserFacingStatus status={output.askMeta.userFacingStatus} className="mb-2" />
+              )}
+              {output?.askMeta?.trustLevel && (
+                <div className="flex items-center gap-2 mb-2">
+                  <TrustBadge level={output.askMeta.trustLevel} />
+                </div>
+              )}
+
               <SqlAudit 
                 sql={auditData?.sql || args?.sql} 
                 explanation={finalExplanation} 
                 assumptions={finalAssumptions} 
                 isStreaming={state === 'call' && !output} 
                 debugRaw={toolPart}
+                defaultExpanded={!output?.askMeta}
               />
+              
+              {output?.askMeta?.recoveryActions && output.askMeta.recoveryActions.length > 0 && (
+                <RecoveryActionPanel 
+                  actions={output.askMeta.recoveryActions} 
+                  onAction={(action) => safeSendMessage({ text: action.label })}
+                  className="my-2"
+                />
+              )}
               
               <div className={`result-drawer ${output || state === 'output-error' ? 'is-ready' : 'is-loading'}`}>
                 {output?.error || toolPart?.errorText ? (

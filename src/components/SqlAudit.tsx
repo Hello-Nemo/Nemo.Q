@@ -29,9 +29,17 @@ interface SqlAuditProps {
   assumptions?: string[];
   isStreaming?: boolean;
   debugRaw?: any;
+  defaultExpanded?: boolean;
 }
 
-export default function SqlAudit({ sql = '', explanation = '', assumptions = [], isStreaming = false, debugRaw = null }: SqlAuditProps) {
+export default function SqlAudit({ 
+  sql = '', 
+  explanation = '', 
+  assumptions = [], 
+  isStreaming = false, 
+  debugRaw = null,
+  defaultExpanded = false 
+}: SqlAuditProps) {
   // Extract audit data from debugRaw if available
   const rawAudit = debugRaw?.output?.audit || debugRaw?.state?.audit || {};
   const plan = rawAudit.plan || {};
@@ -59,7 +67,8 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
   };
 
   const hasData = !!(sql || explanation || safeAssumptions.length > 0 || analysis);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultExpanded);
+
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<'logic' | 'sql'>('logic');
 
