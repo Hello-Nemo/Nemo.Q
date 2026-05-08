@@ -15,60 +15,80 @@ export default function ThinkingIndicator() {
         .thinking-root {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 10px 18px;
-          background: rgba(255, 255, 255, 0.8);
-          border: 1px solid var(--surface-border-strong);
-          border-radius: 12px;
+          gap: 16px;
+          padding: 12px 20px;
+          background: rgba(255, 255, 255, 0.4);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 92, 0, 0.2);
+          border-radius: 16px;
           width: fit-content;
-          animation: fade-in 0.3s ease-out;
-          box-shadow: var(--card-shadow);
-          margin-top: 8px;
+          animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 0 8px 32px rgba(255, 92, 0, 0.05);
+          margin-top: 12px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .thinking-root::after {
+          content: "";
+          position: absolute;
+          left: -100%;
+          top: 0;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(255, 92, 0, 0.05), transparent);
+          animation: sweep 2s infinite linear;
+        }
+
+        @keyframes sweep {
+          0% { left: -100%; }
+          100% { left: 100%; }
         }
 
         .pulse-dot {
-          width: 6px;
-          height: 6px;
-          background: var(--novapulse);
+          width: 8px;
+          height: 8px;
+          background: #FF5C00;
           border-radius: 50%;
-          box-shadow: 0 0 8px var(--novapulse-glow);
-          animation: pulse 1.5s infinite ease-in-out;
+          box-shadow: 0 0 12px rgba(255, 92, 0, 0.5);
+          animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
         }
 
         .text-anim {
           display: flex;
-          align-items: baseline;
-          gap: 2px;
+          align-items: center;
+          gap: 4px;
         }
 
         .mono {
           font-family: var(--font-mono);
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 800;
-          color: var(--text-secondary);
-          letter-spacing: 0.1em;
+          color: var(--text-primary);
+          letter-spacing: 0.15em;
+          text-transform: uppercase;
         }
 
         .dots {
           font-family: var(--font-mono);
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 800;
-          color: var(--novapulse);
-          animation: blink 1.2s infinite;
+          color: #FF5C00;
+          animation: blink 1.4s infinite;
         }
 
         @keyframes pulse {
-          0%, 100% { transform: scale(1); opacity: 0.6; }
-          50% { transform: scale(1.4); opacity: 1; }
+          0%, 100% { transform: scale(1); opacity: 0.5; box-shadow: 0 0 0 rgba(255, 92, 0, 0); }
+          50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 15px rgba(255, 92, 0, 0.6); }
         }
 
         @keyframes blink {
-          0%, 100% { opacity: 0; }
-          50% { opacity: 1; }
+          0%, 20%, 80%, 100% { opacity: 0; }
+          40%, 60% { opacity: 1; }
         }
 
         @keyframes fade-in {
-          from { opacity: 0; transform: translateY(4px); }
+          from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>

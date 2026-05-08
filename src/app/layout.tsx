@@ -60,15 +60,6 @@ export default function RootLayout({
           }
           [data-theme='dark'] { background: #0B0F1A; }
           
-          /* Visibility Guard: Hide body until layout is ready to prevent FOUC */
-          body { 
-            opacity: 0; 
-            transition: opacity 0.2s ease-in; 
-          }
-          body.is-ready { 
-            opacity: 1; 
-          }
-
           /* Critical Infrastructure Classes */
           .workbench-root { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
           .workbench-body { flex: 1; display: flex; flex-direction: row; height: 100%; overflow: hidden; min-width: 0; }
@@ -76,9 +67,9 @@ export default function RootLayout({
           .canvas-col { flex-shrink: 0; height: 100%; display: flex; border-left: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
           .sidebar-slot { flex-shrink: 0; height: 100%; border-right: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         ` }} />
-        <Script src="/theme.js" strategy="beforeInteractive" />
       </head>
       <body suppressHydrationWarning>
+        <Script src="/theme.js" strategy="afterInteractive" />
         <HistoryProvider>
           {children}
         </HistoryProvider>

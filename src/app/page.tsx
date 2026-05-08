@@ -223,8 +223,9 @@ export default function ChatPage() {
   }, [canvasWidth]);
 
   const handlePin = (cardData: any) => {
-    if (pinnedCards.find(c => c.id === cardData.id)) {
-      setIsCanvasOpen(true); // Even if already pinned, unfold to show it
+    const existing = pinnedCards.find(c => c.id === cardData.id);
+    if (existing) {
+      setPinnedCards(pinnedCards.filter(c => c.id !== cardData.id));
       return;
     }
     setPinnedCards([...pinnedCards, { ...cardData, isPinned: true }]);
@@ -257,7 +258,7 @@ export default function ChatPage() {
 
         <div className="hero-section">
           <h2 className="hero-title">
-            <span className="gradient-text">探索数据</span>的无限可能
+            <span className="gradient-text">探索数据</span><span className="hero-title-rest">的无限可能</span>
           </h2>
           <p className="hero-subtitle">Precision In, Truth Out. 让 AI 助您洞察业务核心。</p>
         </div>
@@ -276,10 +277,10 @@ export default function ChatPage() {
       </div>
 
       <style jsx>{`
-        .welcome-root { display: flex; align-items: center; justify-content: center; min-height: 100%; padding: 120px 40px; position: relative; }
-        .welcome-inner { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 64px; align-items: center; text-align: center; }
+        .welcome-root { display: flex; align-items: center; justify-content: center; min-height: 100%; padding: 80px 20px; position: relative; overflow-y: auto; }
+        .welcome-inner { width: 100%; max-width: 840px; display: flex; flex-direction: column; gap: 48px; align-items: center; text-align: center; }
         
-        .header-box { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+        .header-box { display: flex; flex-direction: column; align-items: center; gap: 16px; }
         
         /* --- Hero Horizontal Brand Layout --- */
         .hero-brand-unit {
@@ -287,20 +288,29 @@ export default function ChatPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 24px;
-          padding: 20px 40px;
-          margin-bottom: 10px;
+          gap: 32px;
+          padding: 24px;
+          margin-bottom: 0;
           white-space: nowrap;
         }
 
+        @media (max-width: 640px) {
+          .hero-brand-unit {
+            flex-direction: column;
+            gap: 16px;
+          }
+          .hero-name { font-size: 72px !important; }
+          .hero-dot-q { font-size: 56px !important; }
+        }
+
         .hero-logo-main {
-          filter: drop-shadow(0 0 30px rgba(255, 92, 0, 0.2));
+          filter: drop-shadow(0 0 40px rgba(255, 92, 0, 0.3));
           animation: logo-float 6s ease-in-out infinite;
         }
 
         @keyframes logo-float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-12px) rotate(2deg); }
         }
 
         .hero-title-group {
@@ -310,27 +320,29 @@ export default function ChatPage() {
         }
 
         .hero-name {
-          font-size: 110px;
+          font-size: 120px;
           font-weight: 900;
-          letter-spacing: -0.06em;
+          letter-spacing: -0.07em;
           color: var(--text-primary);
-          line-height: 1;
+          line-height: 0.9;
           margin: 0;
+          filter: drop-shadow(0 10px 20px rgba(0,0,0,0.05));
         }
 
         .hero-dot-q {
-          font-size: 80px;
+          font-size: 90px;
           font-weight: 900;
           color: #FF5C00;
-          line-height: 1;
-          margin-left: 4px;
+          line-height: 0.9;
+          margin-left: 2px;
         }
 
         .hero-scan-area {
           position: absolute;
-          top: 0; left: 0; width: 100%; height: 200px;
+          top: -20px; left: 0; width: 100%; height: calc(100% + 40px);
           pointer-events: none;
           z-index: 5;
+          overflow: hidden;
         }
 
         .scanline {
@@ -338,42 +350,42 @@ export default function ChatPage() {
           top: 0;
           left: 0;
           width: 100%;
-          height: 1.5px;
+          height: 2px;
           background: linear-gradient(to right, transparent, #FF5C00, transparent);
-          box-shadow: 0 0 20px rgba(255, 92, 0, 0.4);
-          animation: scan 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          box-shadow: 0 0 25px rgba(255, 92, 0, 0.5);
+          animation: scan 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
         }
 
         @keyframes scan {
-          0% { top: 10%; opacity: 0; }
-          15% { opacity: 0.8; }
-          85% { opacity: 0.8; }
-          100% { top: 90%; opacity: 0; }
+          0% { top: 0%; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; }
         }
 
-
-
-        .hero-section { display: flex; flex-direction: column; gap: 16px; }
-        .hero-title { font-size: 56px; font-weight: 800; letter-spacing: -0.05em; color: var(--text-primary); line-height: 1.1; }
+        .hero-section { display: flex; flex-direction: column; gap: 20px; }
+        .hero-title { font-size: 64px; font-weight: 800; letter-spacing: -0.05em; color: var(--text-primary); line-height: 1.1; }
         .gradient-text { background: var(--accent-flow); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .hero-subtitle { font-size: 18px; color: var(--text-secondary); max-width: 460px; margin: 0 auto; }
-
+        .hero-subtitle { font-size: 20px; color: var(--text-secondary); max-width: 520px; margin: 0 auto; opacity: 0.8; }
 
         .templates-section { width: 100%; }
-        .template-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; width: 100%; }
         .template-pill { 
-          padding: 24px; 
+          padding: 28px; 
           text-align: left; 
           position: relative; 
           overflow: hidden; 
-          transition: all 0.4s var(--spring); 
+          transition: all 0.5s var(--spring); 
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
         }
-        .template-pill:hover { transform: translateY(-4px) scale(1.02); box-shadow: var(--shadow-deep); border-color: var(--accent-primary); }
-        .q-text { font-size: 15px; font-weight: 600; color: var(--text-primary); z-index: 2; position: relative; }
+        .template-pill:hover { transform: translateY(-6px) scale(1.02); box-shadow: var(--shadow-deep); border-color: var(--accent-primary); background: #FFF; }
+        .q-text { font-size: 16px; font-weight: 600; color: var(--text-primary); z-index: 2; position: relative; }
         .q-hover-aura { 
           position: absolute; inset: 0; 
-          background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(99, 102, 241, 0.05), transparent 70%);
-          opacity: 0; transition: opacity 0.3s;
+          background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(255, 92, 0, 0.08), transparent 70%);
+          opacity: 0; transition: opacity 0.4s;
         }
         .template-pill:hover .q-hover-aura { opacity: 1; }
       `}</style>
@@ -470,63 +482,75 @@ export default function ChatPage() {
             </div>
             <style jsx>{`
               .preview-container {
-                background: rgba(255, 255, 255, 0.6);
+                background: rgba(255, 255, 255, 0.8);
+                backdrop-filter: blur(20px);
                 border: 1px solid var(--accent-primary);
-                border-radius: 20px;
-                padding: 24px;
+                border-radius: 24px;
+                padding: 28px;
                 display: flex;
                 flex-direction: column;
-                gap: 16px;
-                box-shadow: 0 10px 30px rgba(99, 102, 241, 0.08);
+                gap: 20px;
+                box-shadow: 0 15px 40px rgba(255, 92, 0, 0.08);
               }
               .preview-label {
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 10px;
                 font-family: var(--font-mono);
-                font-size: 10px;
+                font-size: 11px;
                 font-weight: 800;
                 color: var(--accent-primary);
+                letter-spacing: 0.1em;
               }
               .preview-actions {
                 display: flex;
                 gap: 12px;
-                margin-top: 8px;
+                margin-top: 12px;
+              }
+              @media (max-width: 640px) {
+                .preview-actions {
+                  flex-direction: column;
+                }
+                .preview-container {
+                  padding: 20px;
+                }
               }
               .confirm-btn {
                 flex: 1;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 10px;
-                padding: 14px;
+                gap: 12px;
+                padding: 16px;
                 background: #0F172A;
                 color: #FFF;
                 border: none;
-                border-radius: 12px;
-                font-size: 14px;
+                border-radius: 16px;
+                font-size: 15px;
                 font-weight: 800;
                 cursor: pointer;
-                transition: all 0.3s;
+                transition: all 0.4s var(--spring);
               }
               .confirm-btn:hover {
                 background: #1E293B;
-                transform: scale(1.02);
+                transform: scale(1.03) translateY(-2px);
+                box-shadow: 0 10px 20px rgba(0,0,0,0.1);
               }
               .cancel-btn {
-                padding: 14px 24px;
+                padding: 16px 28px;
                 background: #FFFFFF;
                 color: #64748B;
                 border: 1px solid #E2E8F0;
-                border-radius: 12px;
-                font-size: 14px;
+                border-radius: 16px;
+                font-size: 15px;
                 font-weight: 700;
                 cursor: pointer;
-                transition: all 0.3s;
+                transition: all 0.4s var(--spring);
               }
               .cancel-btn:hover {
                 background: #F8FAFC;
                 color: #1E293B;
+                transform: translateY(-2px);
               }
             `}</style>
           </div>
@@ -631,19 +655,15 @@ export default function ChatPage() {
                 chartType={output?.type === 'bar' ? 'bar' : 'area'}
                 isCertified={output?.audit?.isCertified}
                 audit={output?.audit}
-              />
-              <div className="action-overlay">
-                <button className="action-pill soft-surface" onClick={() => handlePin({
-                  id: toolPart?.toolCallId,
+                isPinned={pinnedCards.some(c => c.id === (toolPart?.toolCallId || `chart-${i}`))}
+                onPin={() => handlePin({
+                  id: toolPart?.toolCallId || `chart-${i}`,
                   type: 'chart',
                   title: output?.title,
                   data: output?.data,
                   chartType: output?.type === 'bar' ? 'bar' : 'area',
-                })}>
-                  <Maximize2 size={12} />
-                  <span>洞察画布</span>
-                </button>
-              </div>
+                })}
+              />
             </div>
           </div>
         );

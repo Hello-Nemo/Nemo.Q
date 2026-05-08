@@ -1,5 +1,5 @@
 import { createAgentUIStreamResponse } from 'ai';
-import { dataAgent } from '@/lib/agent';
+import { createDataAgent } from '@/lib/agent';
 
 export const maxDuration = 120; // 增加到 120s，以支持更复杂的链式思考和画像生成
 
@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
     
-    if (!messages || messages.length === 0) {
+    if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: 'No messages provided' }), { 
         status: 400,
         headers: { 'Content-Type': 'application/json' }
@@ -20,22 +20,27 @@ export async function POST(req: Request) {
 </RUNTIME_CONTEXT>
 `;
 
-    const cleanMessages = messages.map((m: any, idx: number) => ({
-      id: m.id || `m-${idx}-${Date.now()}`,
-      role: m.role,
-      parts: Array.isArray(m.parts) ? m.parts : [{ type: 'text', text: m.content || '' }]
-    })).filter((m: any) => m.role && m.parts.length > 0);
+    const cleanMessages = messages
+      .map((m: any, idx: number) => ({
+        id: m.id || `m-${idx}-${Date.now()}`,
+        role: m.role,
+        parts: Array.isArray(m.parts) ? m.parts : [{ type: 'text', text: m.content || '' }]
+      }))
+      .filter((m: any) => (
+        (m.role === 'user' || m.role === 'assistant') &&
+        m.parts.length > 0
+      ));
+
+    if (cleanMessages.length === 0) {
+      return new Response(JSON.stringify({ error: 'No valid chat messages provided' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     return await createAgentUIStreamResponse({
-      agent: dataAgent,
-      uiMessages: [
-        { 
-          id: `sys-${Date.now()}`,
-          role: 'system', 
-          parts: [{ type: 'text', text: runtimeContext }] 
-        },
-        ...cleanMessages
-      ],
+      agent: createDataAgent(runtimeContext),
+      uiMessages: cleanMessages,
     });
   } catch (error: any) {
     console.error('[CHAT_API_ERROR]', error);

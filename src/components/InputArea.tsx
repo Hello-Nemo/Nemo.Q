@@ -11,19 +11,24 @@ interface InputAreaProps {
 
 export default function InputArea({ isLoading, onSend, onStop }: InputAreaProps) {
   const [input, setInput] = React.useState('');
+  const [isError, setIsError] = React.useState(false);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (input.trim() && !isLoading) {
       onSend(input);
       setInput('');
+      setIsError(false);
+    } else if (!input.trim() && !isLoading) {
+      setIsError(true);
+      setTimeout(() => setIsError(false), 500);
     }
   };
 
   return (
     <div className="input-root">
       <form onSubmit={handleSubmit} className="input-form">
-        <div className="input-island soft-surface">
+        <div className={`input-island soft-surface ${isError ? 'shake' : ''}`}>
           <button type="button" className="util-btn" title="ATTACH">
             <Paperclip size={20} />
           </button>
@@ -115,25 +120,44 @@ export default function InputArea({ isLoading, onSend, onStop }: InputAreaProps)
         
         .hub-btn.send { background: rgba(0,0,0,0.03); color: var(--text-tertiary); }
         .hub-btn.send.active { 
-          background: var(--text-primary); 
+          background: #FF5C00; 
+          color: white; 
+          box-shadow: 0 8px 24px rgba(255, 92, 0, 0.2); 
+        }
+        .hub-btn.send.active:hover { 
+          transform: scale(1.08) rotate(-5deg); 
+          box-shadow: 0 12px 30px rgba(255, 92, 0, 0.3);
+        }
+
+        .hub-btn.stop { 
+          background: #0F172A; 
           color: white; 
           box-shadow: 0 8px 20px rgba(0,0,0,0.1); 
         }
-        .hub-btn.send.active:hover { transform: scale(1.1); }
-
-        .hub-btn.stop { background: var(--critical); color: white; box-shadow: 0 8px 20px rgba(239, 68, 68, 0.2); }
+        .hub-btn.stop:hover {
+          background: #EF4444;
+          transform: scale(1.08);
+        }
 
         .island-aura {
           position: absolute;
-          inset: -20px;
+          inset: -2px;
           background: var(--accent-flow);
-          filter: blur(40px);
+          filter: blur(24px);
           opacity: 0;
           z-index: -1;
-          transition: opacity 0.8s ease;
-          border-radius: 40px;
+          transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1);
+          border-radius: 20px;
         }
-        .island-aura.glow { opacity: 0.1; }
+        .island-aura.glow { opacity: 0.15; }
+
+        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake {
+          10%, 90% { transform: translate3d(-1px, 0, 0); }
+          20%, 80% { transform: translate3d(2px, 0, 0); }
+          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+          40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
       `}</style>
     </div>
   );

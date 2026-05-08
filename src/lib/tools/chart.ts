@@ -22,4 +22,21 @@ export const chartTools = {
       return { success: true, ...args };
     },
   }),
+  generateInsightCanvas: tool({
+    description: '生成一组多维度的洞察卡片并展示在画布上。适用于深度分析报告。',
+    inputSchema: z.object({
+      cards: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        type: z.enum(['chart', 'kpi', 'text', 'table']),
+        chartType: z.enum(['bar', 'line', 'area', 'pie', 'composed']).optional(),
+        data: z.array(z.any()),
+        config: z.any().optional(),
+        explanation: z.string().optional(),
+      })).describe('卡片列表'),
+    }),
+    execute: async (args) => {
+      return { success: true, ...args };
+    },
+  }),
 };

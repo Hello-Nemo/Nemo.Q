@@ -272,6 +272,31 @@ async function runTest() {
     2
   );
 
+  const comparisonMultiFactResult = assertCompiles(
+    'Comparison query preserves multi-pass compilation for multiple facts',
+    {
+      intent: 'comparison',
+      metrics: [{ id: 'sales_amount' }, { id: 'return_amount' }],
+      dimensions: [],
+      timeRange: { type: 'preset', value: 'last_month' },
+      comparison: { type: 'MoM' },
+      filters: []
+    },
+    [
+      'WITH current_period AS \\(WITH fact_0 AS',
+      "orders\\.order_date >= DATE_TRUNC\\('month', CURRENT_DATE - INTERVAL '1 month'\\)",
+      "returns\\.return_date >= DATE_TRUNC\\('month', CURRENT_DATE - INTERVAL '1 month'\\)",
+      "orders\\.order_date >= DATE_TRUNC\\('month', \\(CURRENT_DATE - INTERVAL '1 month'\\) - INTERVAL '1 month'\\)",
+      "returns\\.return_date >= DATE_TRUNC\\('month', \\(CURRENT_DATE - INTERVAL '1 month'\\) - INTERVAL '1 month'\\)"
+    ]
+  );
+
+  assert.match(
+    comparisonMultiFactResult.sql,
+    /historical_period AS \(\s+WITH fact_0 AS/s,
+    'multi-fact comparison should build historical period from multi-pass SQL'
+  );
+
   assert.throws(
     () => compiler.compile({
       intent: 'metric_query',

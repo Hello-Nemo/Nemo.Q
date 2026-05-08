@@ -91,9 +91,11 @@ export default function InsightCanvas({ cards }: InsightCanvasProps) {
           display: flex;
           flex-direction: column;
           gap: 24px;
+          width: 100%;
         }
 
         .card-reveal {
+          width: 100%;
           animation: reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
 

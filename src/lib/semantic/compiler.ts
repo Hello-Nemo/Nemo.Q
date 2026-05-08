@@ -365,7 +365,7 @@ export class SQLCompiler {
 
     // 1. 生成“当前周期” CTE
     const currentPlan = { ...plan, comparison: undefined };
-    const currentResult = this.compileSinglePass(currentPlan, metrics, dimensions);
+    const currentResult = this.compile(currentPlan);
     const currentSql = currentResult.sql;
     
     // 2. 生成“历史周期” CTE

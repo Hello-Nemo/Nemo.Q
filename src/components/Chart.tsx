@@ -27,9 +27,23 @@ interface ChartProps {
   onAction?: (data: any) => void;
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+const COLORS = ['#FF5C00', '#1E1B4B', '#FF8A00', '#475569', '#FFB400', '#10B981'];
 
 export default function Chart({ type, title, description, data, xAxisKey, yAxisKey, onAction }: ChartProps) {
+  const [isReady, setIsReady] = React.useState(false);
+
+  React.useEffect(() => {
+    // Recharts ResponsiveContainer needs a tick to calculate dimensions properly
+    const timer = setTimeout(() => {
+      setIsReady(true);
+      if (typeof window !== 'undefined') {
+        // Delay resize event to allow DOM to settle
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleClick = (payload: any) => {
     if (onAction && payload && payload.activePayload && payload.activePayload[0]) {
       onAction(payload.activePayload[0].payload);
@@ -38,24 +52,43 @@ export default function Chart({ type, title, description, data, xAxisKey, yAxisK
     }
   };
 
+  const xKey = xAxisKey || (data && data.length > 0 ? Object.keys(data[0])[0] : 'name');
+  const yKey = yAxisKey || (data && data.length > 0 ? Object.keys(data[0])[1] : 'value');
+
   const renderChart = () => {
+    if (!isReady) return null;
+
     switch (type) {
       case 'line':
         return (
           <LineChart data={data} onClick={handleClick}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-            <XAxis dataKey={xAxisKey} axisLine={false} tickLine={false} />
-            <YAxis axisLine={false} tickLine={false} />
-            <Tooltip 
-              contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+            <XAxis 
+              dataKey={xKey} 
+              axisLine={false} 
+              tickLine={false} 
+              tick={{ fill: '#94A3B8', fontSize: 12 }}
             />
-            <Legend />
+            <YAxis 
+              axisLine={false} 
+              tickLine={false} 
+              tick={{ fill: '#94A3B8', fontSize: 12 }}
+            />
+            <Tooltip 
+              contentStyle={{ 
+                borderRadius: '12px', 
+                border: 'none', 
+                boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+                padding: '12px'
+              }}
+            />
+            <Legend iconType="circle" />
             <Line
               type="monotone"
-              dataKey={yAxisKey}
-              stroke="#0070f3"
+              dataKey={yKey}
+              stroke="#FF5C00"
               strokeWidth={3}
-              dot={{ r: 4, fill: '#0070f3', cursor: 'pointer' }}
+              dot={{ r: 4, fill: '#FF5C00', strokeWidth: 2, stroke: '#fff' }}
               activeDot={{ r: 6, strokeWidth: 0 }}
             />
           </LineChart>
@@ -63,14 +96,28 @@ export default function Chart({ type, title, description, data, xAxisKey, yAxisK
       case 'bar':
         return (
           <BarChart data={data} onClick={handleClick}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-            <XAxis dataKey={xAxisKey} axisLine={false} tickLine={false} />
-            <YAxis axisLine={false} tickLine={false} />
-            <Tooltip 
-              contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+            <XAxis 
+              dataKey={xKey} 
+              axisLine={false} 
+              tickLine={false} 
+              tick={{ fill: '#94A3B8', fontSize: 12 }}
             />
-            <Legend />
-            <Bar dataKey={yAxisKey} fill="#0070f3" radius={[4, 4, 0, 0]} style={{ cursor: 'pointer' }} />
+            <YAxis 
+              axisLine={false} 
+              tickLine={false} 
+              tick={{ fill: '#94A3B8', fontSize: 12 }}
+            />
+            <Tooltip 
+              contentStyle={{ 
+                borderRadius: '12px', 
+                border: 'none', 
+                boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+                padding: '12px'
+              }}
+            />
+            <Legend iconType="circle" />
+            <Bar dataKey={yKey} fill="#FF5C00" radius={[6, 6, 0, 0]} style={{ cursor: 'pointer' }} />
           </BarChart>
         );
       case 'pie':
@@ -82,9 +129,9 @@ export default function Chart({ type, title, description, data, xAxisKey, yAxisK
               cy="50%"
               innerRadius={60}
               outerRadius={80}
-              paddingAngle={5}
-              dataKey={yAxisKey}
-              nameKey={xAxisKey}
+              paddingAngle={8}
+              dataKey={yKey}
+              nameKey={xKey}
               onClick={handleClick}
               style={{ cursor: 'pointer' }}
             >
@@ -93,9 +140,14 @@ export default function Chart({ type, title, description, data, xAxisKey, yAxisK
               ))}
             </Pie>
             <Tooltip 
-              contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+              contentStyle={{ 
+                borderRadius: '12px', 
+                border: 'none', 
+                boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+                padding: '12px'
+              }}
             />
-            <Legend />
+            <Legend iconType="circle" />
           </PieChart>
         );
       default:
@@ -104,15 +156,17 @@ export default function Chart({ type, title, description, data, xAxisKey, yAxisK
   };
 
   return (
-    <div className="chart-wrapper">
+    <div className="chart-wrapper" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
       <div className="chart-header">
         <h3 className="chart-title">{title}</h3>
         {description && <p className="chart-desc">{description}</p>}
       </div>
-      <div style={{ width: '100%', height: 300 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          {renderChart() as React.ReactElement}
-        </ResponsiveContainer>
+      <div className="chart-container" style={{ width: '100%', height: 320, position: 'relative', flexGrow: 1 }}>
+        {isReady && (
+          <ResponsiveContainer width="100%" height="100%">
+            {renderChart() as React.ReactElement}
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );
