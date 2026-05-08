@@ -4,7 +4,7 @@ import { normalizeToolResult } from './tool-result-normalizer';
 
 function wrapTool(toolName: string, baseTool: any) {
   return {
-    ...baseTool,
+    ...baseTool, // 保持原有的 description, inputSchema 等属性
     execute: async (input: any, options: any) => {
       const result = await baseTool.execute(input, options);
       return normalizeToolResult({

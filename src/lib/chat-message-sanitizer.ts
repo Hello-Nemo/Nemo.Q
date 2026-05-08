@@ -51,6 +51,7 @@ function compactToolOutput(output: any, sampleRows: number) {
     ...(output.requires_action !== undefined ? { requires_action: output.requires_action } : {}),
     ...(output.plan ? { plan: output.plan } : {}),
     ...(output.audit ? { audit: compactAudit(output.audit) } : {}),
+    ...(output.askMeta ? { askMeta: output.askMeta } : {}),
   };
 }
 

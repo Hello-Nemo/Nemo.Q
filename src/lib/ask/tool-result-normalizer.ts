@@ -72,6 +72,15 @@ export function normalizeToolResult(args: {
   result: any;
   input?: any;
 }): any {
+  // Defensive check for non-object results
+  if (!args.result || typeof args.result !== 'object') {
+    const askMeta = computeAskMeta(args);
+    return {
+      output: args.result,
+      askMeta,
+    };
+  }
+
   const askMeta = computeAskMeta(args);
 
   return {

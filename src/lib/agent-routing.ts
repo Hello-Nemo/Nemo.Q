@@ -3,6 +3,7 @@ export const semanticFastTools = [
   'previewQueryPlan',
   'askClarification',
   'render_chart',
+  'executeQuery',
 ] as const;
 
 export const semanticRecoveryTools = [
@@ -11,6 +12,7 @@ export const semanticRecoveryTools = [
   'previewQueryPlan',
   'askClarification',
   'render_chart',
+  'executeQuery',
 ] as const;
 
 export const analysisTools = [

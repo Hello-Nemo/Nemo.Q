@@ -4,6 +4,14 @@ import { sanitizeChatMessagesForAgent } from '@/lib/chat-message-sanitizer';
 
 export const maxDuration = 120; // 增加到 120s，以支持更复杂的链式思考和画像生成
 
+// 解决 BigInt 序列化问题
+if (!(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function () {
+    return this.toString();
+  };
+}
+
+
 export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
@@ -37,14 +45,17 @@ export async function POST(req: Request) {
         ...cleanMessages
       ],
     });
+
   } catch (error: any) {
-    console.error('[CHAT_API_ERROR]', error);
+    console.error('[CHAT_API_CRITICAL_ERROR]', error);
     return new Response(JSON.stringify({ 
       error: error.message || 'Internal Server Error',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      type: error.name
     }), { 
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
+
 }
