@@ -76,7 +76,7 @@ export default function RootLayout({
           .canvas-col { flex-shrink: 0; height: 100%; display: flex; border-left: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
           .sidebar-slot { flex-shrink: 0; height: 100%; border-right: 1px solid rgba(15, 23, 42, 0.08); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         ` }} />
-        <Script src="/theme.js" strategy="beforeInteractive" />
+        <Script id="nemo-theme-init" src="/theme.js" strategy="beforeInteractive" />
       </head>
       <body suppressHydrationWarning>
         <HistoryProvider>

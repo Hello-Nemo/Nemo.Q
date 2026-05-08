@@ -35,11 +35,13 @@ const InsightCanvas = dynamic(() => import('@/components/InsightCanvas'), { ssr:
 const ThinkingIndicator = dynamic(() => import('@/components/ThinkingIndicator'), { ssr: false });
 import Logo from '@/components/Logo';
 import {
+  getPreviewDisplayData,
   getPreviewHydrationKey,
   getPreviewToolPartInput,
   hydratePreviewToolPart,
   needsPreviewHydration,
 } from '@/lib/query-plan-ui';
+import { shouldApplyLoadedSessionMessages } from '@/lib/chat-message-sanitizer';
 
 const SUGGESTED_QUESTIONS = [
   "分析各国家的销售额和客单价",
@@ -70,56 +72,74 @@ export default function ChatPage() {
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
   const [canvasWidth, setCanvasWidth] = useState(480);
   const [pendingPlanActions, setPendingPlanActions] = useState<Record<string, 'confirming' | 'canceling'>>({});
+  const pendingPlanActionsRef = useRef<Record<string, 'confirming' | 'canceling'>>({});
   const isResizing = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
   const isProgrammaticScroll = useRef(false);
   const previewHydrationInFlight = useRef(new Set<string>());
+  const queuedMessageRef = useRef<{ text: string } | null>(null);
 
-  // Load initial messages from session if exists
-  const [initialMessages, setInitialMessages] = useState<TimestampedDataAgentUIMessage[]>([]);
+  // Loaded messages are applied only after the async result matches the active session.
+  const [loadedSession, setLoadedSession] = useState<{
+    id: string | null;
+    messages: TimestampedDataAgentUIMessage[];
+  }>({ id: null, messages: [] });
   
-  useEffect(() => {
-    if (currentSessionId) {
-      luminaStorage.getSession(currentSessionId).then(session => {
-        if (session) {
-          setInitialMessages(session.messages as TimestampedDataAgentUIMessage[]);
-        } else {
-          setInitialMessages([]);
-        }
-      });
-    } else {
-      // If no session ID, create one (this handles first load)
-      const newId = createSession();
-    }
-  }, [currentSessionId, createSession]);
-
   const transport = useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
 
   const { messages, sendMessage, status, stop, error, setMessages } = useChat<TimestampedDataAgentUIMessage>({
     id: currentSessionId || 'new-session',
-    messages: initialMessages,
+    messages: loadedSession.messages,
     transport,
     experimental_throttle: 50,
-    onFinish: (message) => {
-      // Final save when a message is fully streamed
-      if (currentSessionId) {
-        // Force an update to ensure the final state is captured
-      }
-    },
     onError: (err) => {
       console.error('Chat error:', err);
     }
   });
 
-  // Effect to handle multi-session switching and initial load
   const lastLoadedSessionId = useRef<string | null>(null);
+
   useEffect(() => {
-    if (currentSessionId !== lastLoadedSessionId.current && status === 'ready') {
-      setMessages(initialMessages);
-      lastLoadedSessionId.current = currentSessionId;
+    let isCancelled = false;
+
+    lastLoadedSessionId.current = null;
+    setLoadedSession({ id: null, messages: [] });
+    setMessages([]);
+
+    if (!currentSessionId) {
+      createSession();
+      return () => {
+        isCancelled = true;
+      };
     }
-  }, [initialMessages, setMessages, currentSessionId, status]);
+
+    luminaStorage.getSession(currentSessionId).then(session => {
+      if (isCancelled) return;
+      setLoadedSession({
+        id: currentSessionId,
+        messages: session ? session.messages as TimestampedDataAgentUIMessage[] : [],
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [createSession, currentSessionId, setMessages]);
+
+  useEffect(() => {
+    if (!currentSessionId || !loadedSession.id) return;
+    
+    if (shouldApplyLoadedSessionMessages({
+      currentSessionId,
+      loadedSessionId: loadedSession.id,
+      lastAppliedSessionId: lastLoadedSessionId.current,
+      status,
+    })) {
+      setMessages(loadedSession.messages || []);
+      lastLoadedSessionId.current = loadedSession.id;
+    }
+  }, [currentSessionId, loadedSession, setMessages, status]);
 
   // Effect to persist messages and generate title
   useEffect(() => {
@@ -161,25 +181,6 @@ export default function ChatPage() {
     return () => clearTimeout(saveTimeout);
   }, [messages, currentSessionId, updateSession]);
 
-  const isLoading = status === 'streaming' || status === 'submitted';
-
-  // Expert Fix: Safety wrapper to prevent stream collisions
-  const safeSendMessage = useCallback((params: { text: string }) => {
-    if (isLoading) {
-      stop();
-      // Wait for a tick to ensure the internal state settles after stopping
-      setTimeout(() => {
-        sendMessage(params);
-      }, 10);
-      return;
-    }
-    sendMessage(params);
-  }, [isLoading, stop, sendMessage]);
-
-  const appendSyntheticMessages = useCallback((nextMessages: TimestampedDataAgentUIMessage[]) => {
-    setMessages(current => [...current, ...nextMessages] as TimestampedDataAgentUIMessage[]);
-  }, [setMessages]);
-
   const planActionStates = useMemo(() => {
     const states: Record<string, 'confirmed' | 'canceled'> = {};
 
@@ -188,10 +189,7 @@ export default function ChatPage() {
         const output = getPartOutput(part);
         const args = getPartArgs(part);
         
-        // 关键修复：优先从 audit 提取，支持从 args 兜底（用于 streaming 状态或 synthetic 消息）
         const planId = output?.audit?.planId || output?.planId || args?.planId;
-
-        // 严格校验 planId，防止 undefined 污染 states 对象
         if (!planId || typeof planId !== 'string' || planId === 'undefined') return;
 
         if (part.type === 'tool-confirmQueryPlan' && output?.audit?.executed) {
@@ -205,6 +203,66 @@ export default function ChatPage() {
 
     return states;
   }, [messages]);
+
+  const isWaitingForDecision = useMemo(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'assistant') return false;
+    return lastMsg.parts.some((p: any) => {
+      const output = getPartOutput(p);
+      const args = getPartArgs(p);
+      const planId = output?.planId || args?.planId;
+      
+      const isActionRequired = output?.requires_action === true;
+      const alreadyActed = planId ? planActionStates[planId] : false;
+      
+      return (p.type === 'tool-previewQueryPlan' || p.type === 'tool-askClarification') && 
+             isActionRequired && !alreadyActed;
+    });
+  }, [messages, planActionStates]);
+
+  const isLoading = (status === 'streaming' || status === 'submitted') && !isWaitingForDecision;
+
+  const safeSendMessage = useCallback((params: { text: string }) => {
+    if (isLoading) {
+      queuedMessageRef.current = params;
+      stop();
+      return;
+    }
+    sendMessage(params);
+  }, [isLoading, stop, sendMessage]);
+
+  useEffect(() => {
+    if (status !== 'ready' || !queuedMessageRef.current) return;
+
+    const nextMessage = queuedMessageRef.current;
+    queuedMessageRef.current = null;
+    sendMessage(nextMessage);
+  }, [sendMessage, status]);
+
+  const appendSyntheticMessages = useCallback((nextMessages: TimestampedDataAgentUIMessage[]) => {
+    setMessages(current => [...current, ...nextMessages] as TimestampedDataAgentUIMessage[]);
+  }, [setMessages]);
+
+  const beginPlanAction = useCallback((
+    planId: string | undefined,
+    action: 'confirming' | 'canceling'
+  ) => {
+    if (!planId || pendingPlanActionsRef.current[planId]) return false;
+
+    pendingPlanActionsRef.current = {
+      ...pendingPlanActionsRef.current,
+      [planId]: action,
+    };
+    setPendingPlanActions(pendingPlanActionsRef.current);
+    return true;
+  }, []);
+
+  const endPlanAction = useCallback((planId: string) => {
+    const next = { ...pendingPlanActionsRef.current };
+    delete next[planId];
+    pendingPlanActionsRef.current = next;
+    setPendingPlanActions(next);
+  }, []);
 
   useEffect(() => {
     if (status !== 'ready') return;
@@ -261,7 +319,7 @@ export default function ChatPage() {
 
   const handleConfirmPlan = useCallback(async (previewData: any) => {
     const planId = previewData?.planId;
-    if (!planId || pendingPlanActions[planId]) return;
+    if (!beginPlanAction(planId, 'confirming')) return;
 
     const input = {
       planId,
@@ -271,7 +329,6 @@ export default function ChatPage() {
       previewSqlHash: previewData?.previewSqlHash || previewData?.audit?.preview?.sqlHash,
     };
 
-    setPendingPlanActions(prev => ({ ...prev, [planId]: 'confirming' }));
     appendSyntheticMessages([
       {
         id: createClientMessageId('confirm-user'),
@@ -326,17 +383,13 @@ export default function ChatPage() {
         } as TimestampedDataAgentUIMessage,
       ]);
     } finally {
-      setPendingPlanActions(prev => {
-        const next = { ...prev };
-        delete next[planId];
-        return next;
-      });
+      endPlanAction(planId);
     }
-  }, [appendSyntheticMessages, pendingPlanActions]);
+  }, [appendSyntheticMessages, beginPlanAction, endPlanAction]);
 
   const handleCancelPlan = useCallback(async (previewData: any, feedback: string) => {
     const planId = previewData?.planId;
-    if (!planId || pendingPlanActions[planId]) return;
+    if (!beginPlanAction(planId, 'canceling')) return;
 
     const input = {
       planId,
@@ -345,7 +398,6 @@ export default function ChatPage() {
       previewPlanHash: previewData?.planHash || previewData?.audit?.preview?.planHash,
     };
 
-    setPendingPlanActions(prev => ({ ...prev, [planId]: 'canceling' }));
     appendSyntheticMessages([
       {
         id: createClientMessageId('cancel-user'),
@@ -380,13 +432,9 @@ export default function ChatPage() {
         } as TimestampedDataAgentUIMessage,
       ]);
     } finally {
-      setPendingPlanActions(prev => {
-        const next = { ...prev };
-        delete next[planId];
-        return next;
-      });
+      endPlanAction(planId);
     }
-  }, [appendSyntheticMessages, pendingPlanActions]);
+  }, [appendSyntheticMessages, beginPlanAction, endPlanAction]);
 
 
   const handleScroll = useCallback(() => {
@@ -660,8 +708,8 @@ export default function ChatPage() {
         const output = getPartOutput(toolPart);
         const state = toolPart?.state || 'unknown';
         
-        // 预览结果可能在 output 中（如果已执行）或在 args 中（如果是待确认状态）
-        const displayData = (output || args) as any;
+        const previewDisplay = getPreviewDisplayData(toolPart);
+        const displayData = previewDisplay.data as any;
         const planId = displayData?.planId || displayData?.audit?.planId;
         const pendingAction = planId ? pendingPlanActions[planId] : undefined;
         // 增加对 planId 的存在性校验
@@ -677,14 +725,27 @@ export default function ChatPage() {
                 <ShieldCheck size={14} />
                 <span>意图确认 / INTENT_CONFIRMATION</span>
               </div>
-              
-              <SqlAudit 
-                sql={displayData?.sql} 
-                explanation={displayData?.explanation}
-                debugRaw={{ output: { audit: displayData?.audit || { lineage: displayData?.lineage, plan: displayData?.plan, planId } } }}
-              />
 
-              {(!output || output?.requires_action) && (
+              {previewDisplay.isHydrating ? (
+                <div className="preview-hydrating">
+                  <Clock size={14} className="spin-slow" />
+                  <span>正在生成可执行 SQL 与审计证据...</span>
+                </div>
+              ) : displayData?.error ? (
+                <div className="error-block soft-surface">
+                  <AlertCircle size={16} />
+                  <p>{displayData.error}</p>
+                </div>
+              ) : (
+                <SqlAudit 
+                  sql={displayData?.sql} 
+                  explanation={displayData?.explanation}
+                  assumptions={displayData?.audit?.assumptions || displayData?.assumptions}
+                  debugRaw={{ output: { audit: displayData?.audit || { lineage: displayData?.lineage, plan: displayData?.plan, planId } } }}
+                />
+              )}
+
+              {(!output || output?.requires_action) && !displayData?.error && (
                 actionState === 'confirmed' ? (
                   <div className="action-status confirmed">
                     <ShieldCheck size={14} />
@@ -699,7 +760,7 @@ export default function ChatPage() {
                   <div className="preview-actions">
                     <button
                       className="confirm-btn soft-surface"
-                      disabled={!planId || pendingAction === 'confirming' || pendingAction === 'canceling'}
+                      disabled={!planId || !previewDisplay.hasExecutablePreview || pendingAction === 'confirming' || pendingAction === 'canceling'}
                       onClick={() => handleConfirmPlan(displayData)}
                     >
                       <Zap size={14} />
@@ -741,6 +802,18 @@ export default function ChatPage() {
                 display: flex;
                 gap: 12px;
                 margin-top: 8px;
+              }
+              .preview-hydrating {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 14px 16px;
+                border: 1px dashed #CBD5E1;
+                border-radius: 12px;
+                background: #F8FAFC;
+                color: #64748B;
+                font-size: 13px;
+                font-weight: 700;
               }
               .confirm-btn {
                 flex: 1;

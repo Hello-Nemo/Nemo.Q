@@ -107,18 +107,33 @@ const buildSemanticQueryAudit = (args: {
   plan: QueryPlan;
   lineage: Lineage;
   certification: CertificationAudit;
-}) => ({
-  sql: args.sql,
-  explanation: args.explanation,
-  plan: {
-    ...args.plan,
+}) => {
+  const assumptions = [
+    ...args.certification.metrics
+      .map(metric => metric.businessDefinition)
+      .filter((item): item is string => Boolean(item)),
+    ...args.certification.dimensions.map(
+      dimension => `${dimension.name}维度使用语义层认证字段 ${dimension.id}。`
+    ),
+    ...(args.plan.timeRange
+      ? [`时间范围按 QueryPlan 中的 ${args.plan.timeRange.type} 口径过滤。`]
+      : []),
+  ];
+
+  return {
+    sql: args.sql,
+    explanation: args.explanation,
+    assumptions,
+    plan: {
+      ...args.plan,
+      certificationLevel: args.certification.certificationLevel,
+    },
+    lineage: args.lineage,
+    isCertified: args.certification.isCertified,
     certificationLevel: args.certification.certificationLevel,
-  },
-  lineage: args.lineage,
-  isCertified: args.certification.isCertified,
-  certificationLevel: args.certification.certificationLevel,
-  certification: args.certification,
-});
+    certification: args.certification,
+  };
+};
 
 export const buildAnalysisQueryAudit = (args: {
   sql: string;
@@ -130,6 +145,10 @@ export const buildAnalysisQueryAudit = (args: {
 }) => ({
   sql: args.sql,
   explanation: args.explanation,
+  assumptions: [
+    `分析模板使用 ${args.analysis.template} 认证模板。`,
+    `实体口径为 ${args.analysis.entity.label || args.analysis.entity.id} (${args.analysis.entity.column})。`,
+  ],
   plan: {
     ...args.plan,
     certificationLevel: args.certification.certificationLevel,

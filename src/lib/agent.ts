@@ -5,6 +5,10 @@ import { chartTools } from '@/lib/tools/chart';
 
 import fs from 'fs';
 import path from 'path';
+import {
+  getActiveToolsForAgentStep,
+  getLatestUserTextFromModelMessages,
+} from './agent-routing';
 
 const deepseek = createDeepSeek({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -18,17 +22,25 @@ const systemPrompt = fs.readFileSync(
 /**
  * 智能问数 Agent
  */
+const tools = {
+  ...dbTools,
+  ...chartTools,
+};
+
 export const dataAgent = new ToolLoopAgent({
   model: deepseek('deepseek-v4-flash'),
   instructions: systemPrompt,
-  tools: {
-    ...dbTools,
-    ...chartTools,
-  },
-  maxOutputTokens: 4096,
+  tools,
+  maxOutputTokens: 2048,
   temperature: 0.1,
+  prepareStep: ({ messages, steps }) => ({
+    activeTools: getActiveToolsForAgentStep({
+      latestUserText: getLatestUserTextFromModelMessages(messages),
+      steps,
+    }) as Array<keyof typeof tools>,
+  }),
   stopWhen: [
-    stepCountIs(30),
+    stepCountIs(12),
     ({ steps }) => {
       const lastStep = steps[steps.length - 1];
       if (!lastStep || !lastStep.toolResults) return false;

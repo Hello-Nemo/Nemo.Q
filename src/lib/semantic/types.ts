@@ -28,6 +28,7 @@ export interface Dimension {
   entityId: string;
   certified?: boolean;
   transform?: string; // 衍生维度转换逻辑，如 CASE WHEN age < 18 THEN 'Minor' ELSE 'Adult' END
+  timeGrain?: 'day' | 'week' | 'month' | 'quarter' | 'year';
 }
 
 

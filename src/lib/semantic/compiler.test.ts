@@ -36,7 +36,7 @@ describe('SQLCompiler deterministic unit tests', () => {
       type: 'SinglePass'
     });
     expect(result.sql).toMatchInlineSnapshot(
-      `"SELECT users.country AS user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1"`
+      `"SELECT users.country AS "user_country", SUM(orders.total_price) AS "sales_amount" FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1"`
     );
   });
 
@@ -51,7 +51,7 @@ describe('SQLCompiler deterministic unit tests', () => {
 
     expect(result.lineage.type).toBe('SinglePass');
     expect(result.sql).toMatchInlineSnapshot(
-      `"SELECT CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END AS age_group, COUNT(orders.id) AS order_count FROM orders JOIN users ON users.id = orders.user_id WHERE orders.order_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND orders.order_date < DATE_TRUNC('month', CURRENT_DATE) GROUP BY 1"`
+      `"SELECT CASE WHEN users.age < 18 THEN '未成年' WHEN users.age < 35 THEN '青年' WHEN users.age < 60 THEN '中年' ELSE '老年' END AS "age_group", COUNT(orders.id) AS "order_count" FROM orders JOIN users ON users.id = orders.user_id WHERE orders.order_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND orders.order_date < DATE_TRUNC('month', CURRENT_DATE) GROUP BY 1"`
     );
   });
 
@@ -72,7 +72,7 @@ describe('SQLCompiler deterministic unit tests', () => {
       type: 'MultiPass'
     });
     expect(result.sql).toMatchInlineSnapshot(
-      `"WITH fact_0 AS (SELECT users.country AS dim_user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1), fact_1 AS (SELECT users.country AS dim_user_country, SUM(returns.amount) AS return_amount FROM returns JOIN users ON users.id = returns.user_id GROUP BY 1) SELECT COALESCE(fact_0.dim_user_country, fact_1.dim_user_country) AS user_country, fact_0.sales_amount, fact_1.return_amount FROM fact_0 FULL OUTER JOIN fact_1 ON fact_0.dim_user_country = fact_1.dim_user_country"`
+      `"WITH fact_0 AS (SELECT users.country AS "dim_user_country", SUM(orders.total_price) AS "sales_amount" FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1), fact_1 AS (SELECT users.country AS "dim_user_country", SUM(returns.amount) AS "return_amount" FROM returns JOIN users ON users.id = returns.user_id GROUP BY 1) SELECT COALESCE(fact_0."dim_user_country", fact_1."dim_user_country") AS "user_country", fact_0."sales_amount", fact_1."return_amount" FROM fact_0 FULL OUTER JOIN fact_1 ON fact_0."dim_user_country" = fact_1."dim_user_country""`
     );
   });
 
@@ -87,11 +87,25 @@ describe('SQLCompiler deterministic unit tests', () => {
     });
 
     expect(result.lineage.type).toBe('Comparison');
-    expect(result.sql).toMatchInlineSnapshot(`
-      "WITH current_period AS (SELECT users.country AS user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id WHERE orders.order_date >= DATE_TRUNC('month', CURRENT_DATE) AND orders.order_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' GROUP BY 1), historical_period AS (
-              SELECT users.country AS user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id WHERE orders.order_date >= DATE_TRUNC('month', (CURRENT_DATE - INTERVAL '1 month')) AND orders.order_date < DATE_TRUNC('month', (CURRENT_DATE - INTERVAL '1 month')) + INTERVAL '1 month' GROUP BY 1
-            ) SELECT current_period.user_country, current_period.sales_amount AS sales_amount, historical_period.sales_amount AS sales_amount_prev, (current_period.sales_amount - historical_period.sales_amount) / NULLIF(historical_period.sales_amount, 0) AS sales_amount_growth FROM current_period LEFT JOIN historical_period ON current_period.user_country = historical_period.user_country"
-    `);
+    expect(result.sql).toMatchInlineSnapshot(`"WITH current_period AS (SELECT users.country AS "user_country", SUM(orders.total_price) AS "sales_amount" FROM orders JOIN users ON users.id = orders.user_id WHERE orders.order_date >= DATE_TRUNC('month', CURRENT_DATE) AND orders.order_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' GROUP BY 1), historical_period AS (SELECT users.country AS "user_country", SUM(orders.total_price) AS "sales_amount" FROM orders JOIN users ON users.id = orders.user_id WHERE orders.order_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND orders.order_date < DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') + INTERVAL '1 month' GROUP BY 1) SELECT COALESCE(current_period."user_country", historical_period."user_country") AS "user_country", current_period."sales_amount" AS "sales_amount", historical_period."sales_amount" AS "sales_amount_prev", (current_period."sales_amount" - historical_period."sales_amount") / NULLIF(historical_period."sales_amount", 0) AS "sales_amount_growth" FROM current_period FULL OUTER JOIN historical_period ON current_period."user_country" = historical_period."user_country""`);
+  });
+
+  it('compiles Comparison sales_amount YoY by order_month', () => {
+    const result = compile({
+      intent: 'comparison',
+      metrics: [{ id: 'sales_amount' }],
+      dimensions: [{ id: 'order_month' }],
+      timeRange: { type: 'preset', value: 'this_year' },
+      comparison: { type: 'YoY' },
+      filters: [],
+      orderBy: [{ field: 'order_month', direction: 'asc' }]
+    });
+
+    expect(result.lineage.type).toBe('Comparison');
+    expect(result.certification.isCertified).toBe(true);
+    expect(result.sql).toContain("DATE_TRUNC('month', orders.order_date)::date AS \"order_month\"");
+    expect(result.sql).toContain("DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')");
+    expect(result.sql).toContain('current_period."order_month" = historical_period."order_month" + INTERVAL \'1 year\'');
   });
 
   it('throws for an unknown metric', () => {
@@ -125,7 +139,7 @@ describe('SQLCompiler deterministic unit tests', () => {
     });
 
     expect(result.sql).toMatchInlineSnapshot(
-      `"SELECT COUNT(orders.id) AS order_count FROM orders WHERE orders.order_date BETWEEN '2025-01-01' AND '2025-01-31'"`
+      `"SELECT COUNT(orders.id) AS "order_count" FROM orders WHERE orders.order_date BETWEEN '2025-01-01' AND '2025-01-31'"`
     );
   });
 
@@ -139,7 +153,7 @@ describe('SQLCompiler deterministic unit tests', () => {
     });
 
     expect(result.sql).toMatchInlineSnapshot(
-      `"SELECT COUNT(orders.id) AS order_count FROM orders WHERE orders.order_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31'"`
+      `"SELECT COUNT(orders.id) AS "order_count" FROM orders WHERE orders.order_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31'"`
     );
   });
 
@@ -154,7 +168,7 @@ describe('SQLCompiler deterministic unit tests', () => {
     });
 
     expect(result.sql).toMatchInlineSnapshot(
-      `"SELECT users.country AS user_country, SUM(orders.total_price) AS sales_amount FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1 ORDER BY sales_amount desc LIMIT 5"`
+      `"SELECT users.country AS "user_country", SUM(orders.total_price) AS "sales_amount" FROM orders JOIN users ON users.id = orders.user_id GROUP BY 1 ORDER BY sales_amount desc LIMIT 5"`
     );
   });
 

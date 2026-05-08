@@ -194,6 +194,7 @@ function buildBlockedResult(
 匹配到的指标：
 ${metricsInfo}${dimensionsInfo}
 
+如需核对可用语义资产，请调用 listSemanticAtoms；若已明确上述 id，请立即调用 semanticQuery。
 请立即调用 semanticQuery 并根据上述 id 构造 QueryPlan。严禁手写 SQL 绕过。`;
 
   return {

@@ -48,6 +48,15 @@ async function assertConfirmUsesPreviewPlan() {
   );
 }
 
+async function assertPreviewAuditIncludesBusinessEvidence() {
+  const preview = await createPreview();
+
+  assert.equal(preview.audit.isCertified, true);
+  assert.ok(preview.audit.assumptions.some((item: string) => item.includes('销售额口径')));
+  assert.equal(preview.audit.certification.metrics[0].name, '销售额');
+  assert.equal(preview.audit.certification.dimensions[0].name, '国家');
+}
+
 async function assertTamperedPlanIsRejectedBeforeExecution() {
   const preview = await createPreview();
   let executeCalled = false;
@@ -84,6 +93,7 @@ function assertCancelWithoutPreviewRecordIsRejected() {
 }
 
 async function runTest() {
+  await assertPreviewAuditIncludesBusinessEvidence();
   await assertConfirmUsesPreviewPlan();
   await assertTamperedPlanIsRejectedBeforeExecution();
   assertCancelWithoutPreviewRecordIsRejected();

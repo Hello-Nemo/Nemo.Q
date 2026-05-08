@@ -560,7 +560,15 @@ export class SQLCompiler {
 
     // 4. 计算增长率
     const finalSelect = [
-      ...dimensions.map(d => `current_period."${d.id}"`),
+      ...dimensions.map(d => {
+        const currentDimension = `current_period."${d.id}"`;
+        const historicalDimension = `historical_period."${d.id}"`;
+        const alignedHistoricalDimension = this.isTemporalDimension(d)
+          ? `(${historicalDimension} + INTERVAL '${interval}')`
+          : historicalDimension;
+
+        return `COALESCE(${currentDimension}, ${alignedHistoricalDimension}) AS "${d.id}"`;
+      }),
       ...metrics.flatMap(m => [
         `current_period."${m.id}" AS "${m.id}"`,
         `historical_period."${m.id}" AS "${m.id}_prev"`,
@@ -569,10 +577,10 @@ export class SQLCompiler {
     ];
 
     const joinOn = dimensions.length > 0 
-      ? ` ON ${dimensions.map(d => `current_period."${d.id}" = historical_period."${d.id}"`).join(' AND ')}` 
+      ? ` ON ${dimensions.map(d => this.buildComparisonDimensionJoin(d, interval)).join(' AND ')}` 
       : ' ON 1=1';
 
-    const sql = `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} FROM current_period LEFT JOIN historical_period${joinOn}`;
+    const sql = `WITH ${ctes.join(', ')} SELECT ${finalSelect.join(', ')} FROM current_period FULL OUTER JOIN historical_period${joinOn}`;
 
     return {
       sql,
@@ -581,6 +589,24 @@ export class SQLCompiler {
         type: 'Comparison'
       }
     };
+  }
+
+  private buildComparisonDimensionJoin(dimension: Dimension, interval: string): string {
+    const currentDimension = `current_period."${dimension.id}"`;
+    const historicalDimension = `historical_period."${dimension.id}"`;
+
+    if (this.isTemporalDimension(dimension)) {
+      return `${currentDimension} = ${historicalDimension} + INTERVAL '${interval}'`;
+    }
+
+    return `${currentDimension} = ${historicalDimension}`;
+  }
+
+  private isTemporalDimension(dimension: Dimension): boolean {
+    if (dimension.timeGrain) return true;
+
+    const expression = `${dimension.id} ${dimension.column} ${dimension.transform || ''}`;
+    return /\b(date|joined_at|created_at|_at)\b/i.test(expression) || /DATE_TRUNC/i.test(expression);
   }
 
   /**

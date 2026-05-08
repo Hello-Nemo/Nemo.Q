@@ -6,6 +6,29 @@ export function getPreviewToolPartOutput(part: any) {
   return part?.output || part?.result;
 }
 
+export function getPreviewDisplayData(part: any): {
+  data: any;
+  isHydrating: boolean;
+  hasExecutablePreview: boolean;
+} {
+  const input = getPreviewToolPartInput(part);
+  const output = getPreviewToolPartOutput(part);
+
+  if (output?.sql && output?.planId) {
+    return {
+      data: output,
+      isHydrating: false,
+      hasExecutablePreview: true,
+    };
+  }
+
+  return {
+    data: output || input,
+    isHydrating: !!input?.plan && !output?.error,
+    hasExecutablePreview: false,
+  };
+}
+
 export function isPreviewQueryPlanPart(part: any): boolean {
   return part?.type === 'tool-previewQueryPlan';
 }

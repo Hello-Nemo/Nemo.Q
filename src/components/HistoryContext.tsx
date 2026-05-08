@@ -26,8 +26,22 @@ const generateId = () => {
 
 export function HistoryProvider({ children }: { children: React.ReactNode }) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('nemo-q-current-session-id');
+    }
+    return null;
+  });
   const [isLoading, setIsLoading] = useState(true);
+
+  // Update localStorage when currentSessionId changes
+  useEffect(() => {
+    if (currentSessionId) {
+      localStorage.setItem('nemo-q-current-session-id', currentSessionId);
+    } else {
+      localStorage.removeItem('nemo-q-current-session-id');
+    }
+  }, [currentSessionId]);
 
   const refreshSessions = useCallback(async () => {
     try {

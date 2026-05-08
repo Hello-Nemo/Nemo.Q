@@ -128,7 +128,18 @@
       "column": "orders.order_date",
       "description": "下单的时间日期",
       "entityId": "orders",
-      "certified": true
+      "certified": true,
+      "timeGrain": "day"
+    },
+    "order_month": {
+      "id": "order_month",
+      "name": "下单月份",
+      "column": "orders.order_date",
+      "description": "按下单日期归属到月份，用于月度趋势、同比和环比分析",
+      "entityId": "orders",
+      "certified": true,
+      "transform": "DATE_TRUNC('month', orders.order_date)::date",
+      "timeGrain": "month"
     },
     "return_date": {
       "id": "return_date",
@@ -136,7 +147,18 @@
       "column": "returns.return_date",
       "description": "退货发生日期",
       "entityId": "returns",
-      "certified": true
+      "certified": true,
+      "timeGrain": "day"
+    },
+    "return_month": {
+      "id": "return_month",
+      "name": "退货月份",
+      "column": "returns.return_date",
+      "description": "按退货日期归属到月份，用于月度退货趋势分析",
+      "entityId": "returns",
+      "certified": true,
+      "transform": "DATE_TRUNC('month', returns.return_date)::date",
+      "timeGrain": "month"
     },
     "username": {
       "id": "username",

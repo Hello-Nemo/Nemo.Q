@@ -14,7 +14,7 @@ export default function InputArea({ isLoading, onSend, onStop }: InputAreaProps)
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (input.trim() && !isLoading) {
+    if (input.trim()) {
       onSend(input);
       setInput('');
     }

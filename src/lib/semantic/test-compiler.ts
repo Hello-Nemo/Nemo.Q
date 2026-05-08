@@ -52,7 +52,7 @@ async function runTest() {
       filters: [],
       limit: 10
     },
-    ['SUM\\(orders\\.total_price\\) AS sales_amount', 'users\\.country AS user_country']
+    ['SUM\\(orders\\.total_price\\) AS "?sales_amount"?', 'users\\.country AS "?user_country"?']
   );
 
   assertCompiles(
@@ -234,17 +234,17 @@ async function runTest() {
       filters: []
     },
     [
-      'users\\.country AS dim_user_country',
+      'users\\.country AS "?dim_user_country"?',
       "orders\\.order_date >= DATE_TRUNC\\('month', CURRENT_DATE - INTERVAL '1 month'\\)",
       "returns\\.return_date >= DATE_TRUNC\\('month', CURRENT_DATE - INTERVAL '1 month'\\)",
-      'FULL OUTER JOIN fact_1 ON fact_0\\.dim_user_country = fact_1\\.dim_user_country'
+      'FULL OUTER JOIN fact_1 ON fact_0\\."dim_user_country" = fact_1\\."dim_user_country"'
     ]
   );
 
   assertSqlContainsTimes(
     'Multi-pass timeRange applies per fact CTE with shared dimensions',
     multiFactByCountryResult.sql,
-    'users\\.country AS dim_user_country',
+    'users\\.country AS "?dim_user_country"?',
     2
   );
 

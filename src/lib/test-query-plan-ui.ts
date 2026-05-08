@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  getPreviewDisplayData,
   getPreviewToolPartInput,
   getPreviewToolPartOutput,
   hydratePreviewToolPart,
@@ -25,6 +26,11 @@ function assertMissingPreviewOutputCanBeHydrated() {
   };
 
   assert.equal(needsPreviewHydration(part), true);
+  assert.deepEqual(getPreviewDisplayData(part), {
+    data: part.input,
+    isHydrating: true,
+    hasExecutablePreview: false,
+  });
   assert.deepEqual(getPreviewToolPartInput(part), part.input);
   assert.equal(getPreviewToolPartOutput(part), undefined);
 
@@ -43,6 +49,11 @@ function assertMissingPreviewOutputCanBeHydrated() {
   assert.equal(hydrated.output.sql.startsWith('SELECT users.country'), true);
   assert.equal(hydrated.output.planId, 'plan_manual_1');
   assert.equal(needsPreviewHydration(hydrated), false);
+  assert.deepEqual(getPreviewDisplayData(hydrated), {
+    data: hydrated.output,
+    isHydrating: false,
+    hasExecutablePreview: true,
+  });
 }
 
 assertMissingPreviewOutputCanBeHydrated();

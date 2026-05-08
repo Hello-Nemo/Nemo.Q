@@ -39,9 +39,11 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
   const approvalChain = Array.isArray(rawAudit.approvalChain) ? rawAudit.approvalChain : [];
   const shortHash = (value?: string) => value ? value.slice(0, 12) : 'pending';
   
-  const safeAssumptions = Array.isArray(assumptions) 
-    ? assumptions 
-    : (plan.assumptions || []);
+  const safeAssumptions = Array.isArray(assumptions) && assumptions.length > 0
+    ? assumptions
+    : (Array.isArray(rawAudit.assumptions) && rawAudit.assumptions.length > 0
+      ? rawAudit.assumptions
+      : (plan.assumptions || []));
 
   const metrics = plan.metrics || plan.lineage?.metrics || [];
   const dimensions = plan.dimensions || plan.lineage?.dimensions || [];
