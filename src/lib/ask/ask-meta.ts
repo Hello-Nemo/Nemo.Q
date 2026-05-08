@@ -1,4 +1,5 @@
 import { AnswerPath, TrustLevel } from './ask-state';
+import type { IntentCandidate } from './intent-candidates';
 
 export type RecoveryAction = {
   type:
@@ -28,6 +29,9 @@ export type AskMeta = {
   };
 
   recoveryActions: RecoveryAction[];
+
+  intentCandidates?: IntentCandidate[];
+  defaultIntentCandidate?: IntentCandidate;
 
   auditVisibility: {
     showSqlAudit: boolean;

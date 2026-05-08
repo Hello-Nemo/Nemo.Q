@@ -1,6 +1,13 @@
 import { createAgentUIStreamResponse } from 'ai';
 import { dataAgent } from '@/lib/agent';
 import { sanitizeChatMessagesForAgent } from '@/lib/chat-message-sanitizer';
+import { getLatestUserTextFromModelMessages } from '@/lib/agent-routing';
+import {
+  formatIntentCandidatesForPrompt,
+  generateIntentCandidates,
+} from '@/lib/ask/intent-candidates';
+import semanticLayer from '@/lib/semantic-layer.json' with { type: 'json' };
+import type { SemanticLayer } from '@/lib/semantic/types';
 
 export const maxDuration = 120; // 增加到 120s，以支持更复杂的链式思考和画像生成
 
@@ -23,16 +30,24 @@ export async function POST(req: Request) {
       });
     }
 
-    const runtimeContext = `
-<RUNTIME_CONTEXT>
-- Current Time: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
-</RUNTIME_CONTEXT>
-`;
-
     const cleanMessages = sanitizeChatMessagesForAgent(messages, {
       maxMessages: 10,
       keepRecentToolMessages: 1,
     });
+    const latestUserText = getLatestUserTextFromModelMessages(cleanMessages);
+    const intentCandidateContext = latestUserText
+      ? formatIntentCandidatesForPrompt(generateIntentCandidates({
+          question: latestUserText,
+          semanticLayer: semanticLayer as SemanticLayer,
+        }))
+      : '';
+
+    const runtimeContext = `
+<RUNTIME_CONTEXT>
+- Current Time: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+${intentCandidateContext}
+</RUNTIME_CONTEXT>
+`;
 
     return await createAgentUIStreamResponse({
       agent: dataAgent,

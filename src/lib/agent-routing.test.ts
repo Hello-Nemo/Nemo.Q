@@ -5,7 +5,7 @@ import {
 } from './agent-routing';
 
 describe('agent routing', () => {
-  it('keeps standard semantic questions on a narrow tool set', () => {
+  it('keeps standard semantic questions on a semantic-first tool set with guarded fallback', () => {
     const activeTools = getActiveToolsForAgentStep({
       latestUserText: '对比今年和去年各月的销售额',
       steps: [],
@@ -16,6 +16,7 @@ describe('agent routing', () => {
       'previewQueryPlan',
       'askClarification',
       'render_chart',
+      'executeQuery',
     ]);
   });
 
@@ -53,5 +54,15 @@ describe('agent routing', () => {
     ] as any);
 
     expect(text).toBe('今年销售额');
+  });
+
+  it('extracts latest user text from UI message parts', () => {
+    const text = getLatestUserTextFromModelMessages([
+      { role: 'user', parts: [{ type: 'text', text: '旧问题' }] },
+      { role: 'assistant', parts: [{ type: 'text', text: '旧回答' }] },
+      { role: 'user', parts: [{ type: 'text', text: '哪个国家业务表现最好？' }] },
+    ] as any);
+
+    expect(text).toBe('哪个国家业务表现最好？');
   });
 });

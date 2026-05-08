@@ -77,6 +77,9 @@ export function getLatestUserTextFromModelMessages(messages: any[]): string {
     if (Array.isArray(message.content)) {
       return message.content.map(contentPartToText).join('\n').trim();
     }
+    if (Array.isArray(message.parts)) {
+      return message.parts.map(contentPartToText).join('\n').trim();
+    }
   }
 
   return '';
