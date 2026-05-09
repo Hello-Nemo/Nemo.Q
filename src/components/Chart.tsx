@@ -163,7 +163,7 @@ export default function Chart({ type, title, description, data, xAxisKey, yAxisK
       </div>
       <div className="chart-container" style={{ width: '100%', height: 320, position: 'relative', flexGrow: 1 }}>
         {isReady && (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             {renderChart() as React.ReactElement}
           </ResponsiveContainer>
         )}

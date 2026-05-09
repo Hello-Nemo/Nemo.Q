@@ -2,12 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  BarChart, Bar, 
+  BarChart, Bar,
   LineChart, Line, 
   AreaChart, Area,
-  PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ComposedChart
+  XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { 
   Pin, 
@@ -60,6 +58,9 @@ export default function InsightCard(props: InsightCardProps) {
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'insight' | 'audit'>('insight');
   const [isMounted, setIsMounted] = useState(false);
+  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartHeight = compact ? 180 : 280;
   
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -71,7 +72,34 @@ export default function InsightCard(props: InsightCardProps) {
     return () => clearTimeout(timer);
   }, []);
 
-  const chartHeight = compact ? 180 : 280;
+  useEffect(() => {
+    if (!chartRef.current || type !== 'chart') return;
+
+    const element = chartRef.current;
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect();
+      const width = Math.floor(rect.width);
+      const height = Math.floor(rect.height);
+      setChartSize(prev => (
+        width > 0 &&
+        height > 0 &&
+        (prev.width !== width || prev.height !== height)
+          ? { width, height }
+          : prev
+      ));
+    };
+
+    updateSize();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSize);
+      return () => window.removeEventListener('resize', updateSize);
+    }
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [type, data, chartHeight]);
 
   const renderKPI = () => {
     if (!data || data.length === 0) return null;
@@ -130,11 +158,11 @@ export default function InsightCard(props: InsightCardProps) {
         {type === 'kpi' && renderKPI()}
 
         {type === 'chart' && (
-          <div className="chart-wrapper" style={{ height: chartHeight, width: '100%', position: 'relative' }}>
-            {isMounted && (
-              <ResponsiveContainer width="100%" height="100%">
+          <div ref={chartRef} className="chart-wrapper" style={{ height: chartHeight, width: '100%', position: 'relative' }}>
+            {isMounted && chartSize.width > 0 && chartSize.height > 0 && (
+              <>
                 {chartType === 'area' ? (
-                  <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart width={chartSize.width} height={chartSize.height} data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#FF5C00" stopOpacity={0.15}/>
@@ -166,7 +194,7 @@ export default function InsightCard(props: InsightCardProps) {
                     />
                   </AreaChart>
                 ) : chartType === 'bar' ? (
-                  <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart width={chartSize.width} height={chartSize.height} data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis 
                       dataKey={xKey} 
@@ -190,7 +218,7 @@ export default function InsightCard(props: InsightCardProps) {
                     />
                   </BarChart>
                 ) : (
-                  <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <LineChart width={chartSize.width} height={chartSize.height} data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis 
                       dataKey={xKey} 
@@ -216,7 +244,7 @@ export default function InsightCard(props: InsightCardProps) {
                     />
                   </LineChart>
                 )}
-              </ResponsiveContainer>
+              </>
             )}
           </div>
         )}

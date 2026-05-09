@@ -1385,10 +1385,12 @@ button:active {
 }
 
 .input-zone {
-  position: sticky;
-  bottom: 28px;
+  position: relative;
+  bottom: auto;
+  flex-shrink: 0;
   margin: 0 auto;
-  width: min(calc(100% - 48px), 800px);
+  width: min(calc(100% - 48px), 880px);
+  padding: 0 40px 24px;
   z-index: 50;
 }
 
@@ -1536,7 +1538,7 @@ button:active {
 .message-list {
   width: min(100%, 1040px);
   margin: 0 auto;
-  padding: 72px 40px 240px;
+  padding: 72px 40px 180px;
   display: flex;
   flex-direction: column;
   gap: 64px;
@@ -2106,12 +2108,13 @@ button:active {
   }
 
   .input-zone {
-    position: fixed;
-    left: 14px;
+    position: relative;
+    left: auto;
     right: auto;
-    bottom: 16px;
-    width: min(320px, calc(100vw - 28px)) !important;
-    max-width: min(320px, calc(100vw - 28px));
+    bottom: auto;
+    width: 100% !important;
+    max-width: none;
+    padding: 0 14px 14px;
     margin: 0;
   }
 
@@ -2139,7 +2142,7 @@ button:active {
   }
 
   .message-list {
-    padding: 82px 18px 190px;
+    padding: 82px 18px 150px;
     gap: 44px;
   }
 

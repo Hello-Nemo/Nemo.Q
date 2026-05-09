@@ -42,6 +42,32 @@ const buildSemanticCompilationError = (message: string) => ({
   details: { message }
 });
 
+export const executeSemanticQueryPlan = async (plan: QueryPlan, explanation: string) => {
+  const projectName = process.env.CURRENT_PROJECT || 'default';
+  const semanticLayer = getSemanticLayer(projectName);
+  const compiler = new SQLCompiler(semanticLayer);
+  const compilationResult = compiler.compile(plan as QueryPlan);
+  const { sql, lineage } = compilationResult;
+  console.log('[DEBUG] semanticQuery generated SQL:', sql);
+
+  const ds = getDataSource();
+  try {
+    const result = await ds.executeQuery(sql);
+    return {
+      ...result,
+      audit: {
+        sql,
+        explanation,
+        plan,
+        lineage,
+        isCertified: true
+      }
+    };
+  } finally {
+    await ds.close();
+  }
+};
+
 /**
  * 获取数据库所有表的元数据
  */
@@ -218,31 +244,8 @@ export const semanticQuery = tool({
     plan: queryPlanSchema.describe('结构化的查询计划 (Query Plan)'),
   }),
   execute: async ({ plan, explanation }) => {
-    const projectName = process.env.CURRENT_PROJECT || 'default';
-    const semanticLayer = getSemanticLayer(projectName);
-    const compiler = new SQLCompiler(semanticLayer);
-    
     try {
-      const compilationResult = compiler.compile(plan as QueryPlan);
-      const { sql, lineage } = compilationResult;
-      console.log('[DEBUG] semanticQuery generated SQL:', sql);
-      
-      const ds = getDataSource();
-      try {
-        const result = await ds.executeQuery(sql);
-        return {
-          ...result,
-          audit: { 
-            sql, 
-            explanation, 
-            plan,
-            lineage,
-            isCertified: true 
-          }
-        };
-      } finally {
-        await ds.close();
-      }
+      return await executeSemanticQueryPlan(plan as QueryPlan, explanation);
     } catch (e: any) {
       return buildSemanticCompilationError(e.message);
     }
@@ -268,6 +271,7 @@ export const previewQueryPlan = tool({
       return {
         ...result,
         explanation,
+        plan,
         requires_action: true, // 强制暂停，等待用户在 UI 点击“确认执行”
         preview: true
       };
@@ -290,4 +294,3 @@ export const dbTools = {
   previewQueryPlan,
   listSemanticAtoms,
 };
-

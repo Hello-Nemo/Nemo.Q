@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { 
   ChevronDown,
   ChevronLeft,
@@ -19,7 +19,10 @@ import {
   AlertCircle,
   Sparkles,
   Zap,
-  ShieldCheck
+  ShieldCheck,
+  CheckCircle2,
+  Loader2,
+  BarChart3
 } from 'lucide-react';
 
 import type { DataAgentUIMessage, TimestampedDataAgentUIMessage } from '@/lib/types';
@@ -42,12 +45,81 @@ const SUGGESTED_QUESTIONS = [
   "找出最近退货率最高的产品类别",
 ];
 
+type PreviewExecutionState = {
+  status: 'loading' | 'success' | 'error';
+  result?: {
+    rowCount?: number;
+    rows?: any[];
+    message?: string;
+    audit?: any;
+    error?: string;
+  };
+  error?: string;
+};
+
+const EXECUTION_TOOL_TYPES = new Set([
+  'tool-semanticQuery',
+  'tool-executeQuery',
+  'tool-render_chart',
+  'tool-generateInsightCanvas',
+]);
+
+const COLUMN_LABELS: Record<string, string> = {
+  user_country: '国家',
+  country: '国家',
+  sales_amount: '销售额',
+  aov: '客单价',
+  order_count: '订单量',
+  user_count: '用户数',
+  return_amount: '退货金额',
+};
+
+const isNumericLike = (value: any) => {
+  if (typeof value === 'number') return Number.isFinite(value);
+  return typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value));
+};
+
+const toNumber = (value: any) => typeof value === 'number' ? value : Number(value);
+
+const formatColumnLabel = (key: string) => {
+  if (COLUMN_LABELS[key]) return COLUMN_LABELS[key];
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const isExecutionPartType = (type: string) => EXECUTION_TOOL_TYPES.has(type);
+
+const buildChartSpecs = (rows: any[]) => {
+  if (!rows?.length) return [];
+
+  const keys = Object.keys(rows[0]);
+  const numericKeys = keys.filter((key) => rows.some((row) => isNumericLike(row[key])));
+  const dimensionKey = keys.find((key) => !numericKeys.includes(key)) || keys[0];
+
+  return numericKeys.slice(0, 2).map((metricKey) => ({
+    metricKey,
+    dimensionKey,
+    title: `${formatColumnLabel(metricKey)} by ${formatColumnLabel(dimensionKey)}`,
+    data: rows.map((row) => ({
+      ...row,
+      [metricKey]: toNumber(row[metricKey]),
+    })),
+  }));
+};
+
 import { useHistory } from '@/components/HistoryContext';
-import { luminaStorage } from '@/lib/db';
+import {
+  getCachedSessionMessages,
+  getMessagesFingerprint,
+  shouldPersistMessages,
+  type MessagesSnapshot,
+} from '@/lib/session-state';
 
 export default function ChatPage() {
   const { currentSessionId, updateSession, createSession, sessions } = useHistory();
   const [pinnedCards, setPinnedCards] = useState<any[]>([]);
+  const [executedPreviews, setExecutedPreviews] = useState<Record<string, PreviewExecutionState>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
   
@@ -57,30 +129,15 @@ export default function ChatPage() {
   const startX = useRef(0);
   const startWidth = useRef(0);
   const isProgrammaticScroll = useRef(false);
-
-  // Load initial messages from session if exists
-  const [initialMessages, setInitialMessages] = useState<TimestampedDataAgentUIMessage[]>([]);
-  
-  useEffect(() => {
-    if (currentSessionId) {
-      luminaStorage.getSession(currentSessionId).then(session => {
-        if (session) {
-          setInitialMessages(session.messages as TimestampedDataAgentUIMessage[]);
-        } else {
-          setInitialMessages([]);
-        }
-      });
-    } else {
-      // If no session ID, create one (this handles first load)
-      const newId = createSession();
-    }
-  }, [currentSessionId, createSession]);
+  const sessionsRef = useRef(sessions);
+  const hydratedSnapshotRef = useRef<MessagesSnapshot | null>(null);
+  const [messageOwnerSessionId, setMessageOwnerSessionId] = useState<string | null>(currentSessionId);
 
   const transport = useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
 
   const { messages, sendMessage, status, stop, error, setMessages } = useChat<TimestampedDataAgentUIMessage>({
     id: currentSessionId || 'new-session',
-    messages: initialMessages,
+    messages: [],
     transport,
     experimental_throttle: 50,
     onFinish: (message) => {
@@ -94,18 +151,54 @@ export default function ChatPage() {
     }
   });
 
-  // Effect to handle multi-session switching and initial load
-  const lastLoadedSessionId = useRef<string | null>(null);
   useEffect(() => {
-    if (currentSessionId !== lastLoadedSessionId.current && status === 'ready') {
-      setMessages(initialMessages);
-      lastLoadedSessionId.current = currentSessionId;
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  const hydrateMessages = useCallback((sessionId: string, nextMessages: TimestampedDataAgentUIMessage[]) => {
+    hydratedSnapshotRef.current = {
+      sessionId,
+      fingerprint: getMessagesFingerprint(nextMessages),
+    };
+    setMessageOwnerSessionId(sessionId);
+    setMessages(nextMessages);
+  }, [setMessages]);
+
+  // Keep the visible chat in sync with the selected session without saving hydrated history.
+  useLayoutEffect(() => {
+    if (!currentSessionId) {
+      createSession();
+      return;
     }
-  }, [initialMessages, setMessages, currentSessionId, status]);
+
+    const cachedMessages = getCachedSessionMessages<TimestampedDataAgentUIMessage>(
+      sessionsRef.current,
+      currentSessionId
+    );
+
+    hydrateMessages(currentSessionId, cachedMessages);
+    setExecutedPreviews({});
+    setIsAutoScrollEnabled(true);
+  }, [currentSessionId, createSession, hydrateMessages]);
+
+  useEffect(() => {
+    if (!currentSessionId || messageOwnerSessionId === currentSessionId) return;
+    setMessageOwnerSessionId(currentSessionId);
+  }, [currentSessionId, messageOwnerSessionId]);
 
   // Effect to persist messages and generate title
   useEffect(() => {
-    if (!currentSessionId || messages.length === 0) return;
+    if (!currentSessionId) return;
+
+    if (!shouldPersistMessages({
+      currentSessionId,
+      messageOwnerSessionId,
+      messages,
+      hydratedSnapshot: hydratedSnapshotRef.current,
+    })) return;
+
+    const sessionId = currentSessionId;
+    const fingerprint = getMessagesFingerprint(messages);
 
     const isFirstMessage = messages.length === 1 && messages[0].role === 'user';
     
@@ -123,13 +216,14 @@ export default function ChatPage() {
         }
       }
 
-      await updateSession(currentSessionId, {
+      await updateSession(sessionId, {
         messages: messages.map(m => ({
           ...m,
           createdAt: m.createdAt || new Date()
         })),
         ...(title ? { title } : {})
       });
+      hydratedSnapshotRef.current = { sessionId, fingerprint };
     };
 
     // If it's the very first message, save immediately to sync sidebar
@@ -141,7 +235,7 @@ export default function ChatPage() {
     // Otherwise, debounce saves during streaming
     const saveTimeout = setTimeout(saveSession, 1500);
     return () => clearTimeout(saveTimeout);
-  }, [messages, currentSessionId, updateSession]);
+  }, [messages, currentSessionId, messageOwnerSessionId, updateSession]);
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
@@ -235,6 +329,124 @@ export default function ChatPage() {
   const handleAction = (rowData: any) => {
     const summary = Object.entries(rowData).map(([k, v]) => `${k}: ${v}`).join(', ');
     safeSendMessage({ text: `针对这条记录深度分析其对业务的影响：${summary}` });
+  };
+
+  const executePreviewPlan = useCallback(async (previewKey: string, displayData: any) => {
+    const plan = displayData?.plan;
+
+    if (!plan) {
+      setExecutedPreviews(prev => ({
+        ...prev,
+        [previewKey]: {
+          status: 'error',
+          error: '这条预览缺少可执行 QueryPlan，请重新生成查询预览。'
+        }
+      }));
+      return;
+    }
+
+    setExecutedPreviews(prev => ({
+      ...prev,
+      [previewKey]: { status: 'loading' }
+    }));
+
+    try {
+      const response = await fetch('/api/query/execute-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan,
+          explanation: displayData?.explanation || '用户确认执行预览查询计划。'
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || '查询执行失败');
+      }
+
+      setExecutedPreviews(prev => ({
+        ...prev,
+        [previewKey]: {
+          status: 'success',
+          result
+        }
+      }));
+    } catch (err: any) {
+      setExecutedPreviews(prev => ({
+        ...prev,
+        [previewKey]: {
+          status: 'error',
+          error: err?.message || '查询执行失败'
+        }
+      }));
+    }
+  }, []);
+
+  const renderPreviewExecution = (previewKey: string, state?: PreviewExecutionState) => {
+    if (!state) return null;
+
+    if (state.status === 'loading') {
+      return (
+        <div className="preview-execution execution-loading">
+          <Loader2 size={16} className="spin-slow" />
+          <span>正在执行已确认的查询计划...</span>
+        </div>
+      );
+    }
+
+    if (state.status === 'error') {
+      return (
+        <div className="preview-execution execution-error">
+          <AlertCircle size={16} />
+          <span>{state.error || '查询执行失败'}</span>
+        </div>
+      );
+    }
+
+    const rows = state.result?.rows || [];
+    const chartSpecs = buildChartSpecs(rows);
+
+    return (
+      <div className="preview-execution execution-ready">
+        <div className="execution-head">
+          <div className="execution-title">
+            <CheckCircle2 size={16} />
+            <span>已执行查询计划</span>
+          </div>
+          <span className="execution-count">{state.result?.rowCount ?? rows.length} 行结果</span>
+        </div>
+
+        {state.result?.message && (
+          <p className="execution-note">{state.result.message}</p>
+        )}
+
+        {chartSpecs.length > 0 && (
+          <div className="preview-chart-grid">
+            {chartSpecs.map((spec) => (
+              <InsightCard
+                key={`${previewKey}-${spec.metricKey}`}
+                id={`${previewKey}-${spec.metricKey}`}
+                type="chart"
+                chartType="bar"
+                title={spec.title}
+                data={spec.data}
+                config={{ xAxis: spec.dimensionKey, yAxis: spec.metricKey }}
+                compact
+                isCertified={state.result?.audit?.isCertified}
+              />
+            ))}
+          </div>
+        )}
+
+        {rows.length > 0 ? (
+          <DataTable rows={rows} rowCount={state.result?.rowCount} onAction={handleAction} />
+        ) : (
+          <div className="empty-result">查询成功，但没有返回数据。</div>
+        )}
+      </div>
+    );
   };
 
   const renderWelcome = () => (
@@ -442,10 +654,31 @@ export default function ChatPage() {
         if (!toolPart) return null;
         const args = getPartArgs(toolPart);
         const output = getPartOutput(toolPart);
-        const state = toolPart?.state || 'unknown';
         
         // 预览结果可能在 output 中（如果已执行）或在 args 中（如果是待确认状态）
         const displayData = output || args;
+        const hasMeaningfulPreview = !!(
+          displayData?.sql ||
+          displayData?.explanation ||
+          displayData?.lineage ||
+          displayData?.plan
+        );
+        const hasLaterPreview = parts
+          .slice(i + 1)
+          .some((nextPart) => (nextPart as any).type === 'tool-previewQueryPlan');
+
+        if (!hasMeaningfulPreview || (!output && hasLaterPreview)) {
+          return null;
+        }
+
+        const previewKey = toolPart?.toolCallId || `preview-${i}`;
+        const executionState = executedPreviews[previewKey];
+        const hasDownstreamExecution = parts
+          .slice(i + 1)
+          .some((nextPart) => isExecutionPartType((nextPart as any).type));
+        const isExecutable = !!displayData?.plan && !hasDownstreamExecution;
+        const isExecuting = executionState?.status === 'loading';
+        const isExecuted = executionState?.status === 'success';
         
         return (
           <div key={`part-preview-${i}`} className="part-unit flow-part animate-fade-in">
@@ -461,17 +694,21 @@ export default function ChatPage() {
                 debugRaw={{ output: { audit: { lineage: displayData?.lineage, plan: displayData?.plan } } }}
               />
 
-              {(!output || output?.requires_action) && (
+              {renderPreviewExecution(previewKey, executionState)}
+
+              {(!hasDownstreamExecution && (!output || output?.requires_action)) && (
                 <div className="preview-actions">
                   <button 
-                    className="confirm-btn soft-surface"
-                    onClick={() => safeSendMessage({ text: "确认执行该计划" })}
+                    className={`confirm-btn soft-surface ${isExecuted ? 'is-done' : ''}`}
+                    disabled={!isExecutable || isExecuting || isExecuted}
+                    onClick={() => executePreviewPlan(previewKey, displayData)}
                   >
-                    <Zap size={14} />
-                    <span>确认并执行</span>
+                    {isExecuting ? <Loader2 size={14} className="spin-slow" /> : isExecuted ? <CheckCircle2 size={14} /> : <Zap size={14} />}
+                    <span>{isExecuting ? '执行中...' : isExecuted ? '已执行' : isExecutable ? '确认并执行' : '无法执行'}</span>
                   </button>
                   <button 
                     className="cancel-btn soft-surface"
+                    disabled={isExecuting || isExecuted}
                     onClick={() => safeSendMessage({ text: "我不确定，请重新调整" })}
                   >
                     <AlertCircle size={14} />
@@ -482,15 +719,15 @@ export default function ChatPage() {
             </div>
             <style jsx>{`
               .preview-container {
-                background: rgba(255, 255, 255, 0.8);
-                backdrop-filter: blur(20px);
-                border: 1px solid var(--accent-primary);
-                border-radius: 24px;
-                padding: 28px;
+                background: rgba(255, 255, 255, 0.92);
+                border: 1px solid var(--surface-border-strong);
+                border-left: 3px solid var(--accent-primary);
+                border-radius: 18px;
+                padding: 20px;
                 display: flex;
                 flex-direction: column;
-                gap: 20px;
-                box-shadow: 0 15px 40px rgba(255, 92, 0, 0.08);
+                gap: 16px;
+                box-shadow: var(--shadow-soft);
               }
               .preview-label {
                 display: flex;
@@ -505,14 +742,81 @@ export default function ChatPage() {
               .preview-actions {
                 display: flex;
                 gap: 12px;
-                margin-top: 12px;
+                margin-top: 4px;
               }
+              .preview-execution {
+                border-radius: 14px;
+                border: 1px solid var(--surface-border);
+                background: #FFFFFF;
+              }
+              .execution-loading,
+              .execution-error {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 14px 16px;
+                font-size: 13px;
+                font-weight: 700;
+                color: var(--text-secondary);
+              }
+              .execution-error {
+                border-color: rgba(239, 68, 68, 0.2);
+                color: var(--critical);
+                background: rgba(239, 68, 68, 0.04);
+              }
+              .execution-ready {
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+                padding: 16px;
+              }
+              .execution-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+              }
+              .execution-title {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                color: var(--success);
+                font-size: 13px;
+                font-weight: 800;
+              }
+              .execution-count {
+                font-family: var(--font-mono);
+                font-size: 10px;
+                font-weight: 800;
+                color: var(--text-tertiary);
+                background: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 999px;
+                padding: 4px 10px;
+                white-space: nowrap;
+              }
+              .execution-note,
+              .empty-result {
+                margin: 0;
+                font-size: 13px;
+                color: var(--text-secondary);
+              }
+              .preview-chart-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                gap: 12px;
+              }
+              .spin-slow { animation: spin 1s linear infinite; }
+              @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
               @media (max-width: 640px) {
                 .preview-actions {
                   flex-direction: column;
                 }
                 .preview-container {
-                  padding: 20px;
+                  padding: 16px;
+                }
+                .preview-chart-grid {
+                  grid-template-columns: 1fr;
                 }
               }
               .confirm-btn {
@@ -531,7 +835,17 @@ export default function ChatPage() {
                 cursor: pointer;
                 transition: all 0.4s var(--spring);
               }
-              .confirm-btn:hover {
+              .confirm-btn:disabled,
+              .cancel-btn:disabled {
+                cursor: not-allowed;
+                opacity: 0.62;
+                transform: none !important;
+                box-shadow: none;
+              }
+              .confirm-btn.is-done {
+                background: var(--success);
+              }
+              .confirm-btn:not(:disabled):hover {
                 background: #1E293B;
                 transform: scale(1.03) translateY(-2px);
                 box-shadow: 0 10px 20px rgba(0,0,0,0.1);
@@ -547,7 +861,7 @@ export default function ChatPage() {
                 cursor: pointer;
                 transition: all 0.4s var(--spring);
               }
-              .cancel-btn:hover {
+              .cancel-btn:not(:disabled):hover {
                 background: #F8FAFC;
                 color: #1E293B;
                 transform: translateY(-2px);
@@ -608,12 +922,21 @@ export default function ChatPage() {
         const toolPart = part as any;
         const state = toolPart?.state || 'unknown';
         if (state === 'result') return null; // 辅助工具的结果通常不需要直接展示在主流中
+        const previousPart = parts[i - 1] as any;
+        const previousWasUtility = previousPart && [
+          'tool-getSchema',
+          'tool-getTableSamples',
+          'tool-searchTables',
+          'tool-listSemanticAtoms'
+        ].includes(previousPart.type);
+
+        if (previousWasUtility) return null;
         
         return (
           <div key={`part-util-${i}`} className="part-unit util-part animate-fade-in">
             <div className="util-indicator">
               <Clock size={12} className="spin-slow" />
-              <span>正在分析数据库结构...</span>
+              <span>正在读取库表、样本与语义资产...</span>
             </div>
             <style jsx>{`
               .util-indicator {
@@ -669,6 +992,37 @@ export default function ChatPage() {
         );
       }
 
+      case 'tool-generateInsightCanvas': {
+        const toolPart = part as any;
+        if (!toolPart) return null;
+
+        const output = getPartOutput(toolPart);
+        const cards = output?.cards || getPartArgs(toolPart)?.cards || [];
+
+        if (!cards.length) return <div key={`part-canvas-sk-${i}`} className="skeleton-card soft-surface" />;
+
+        return (
+          <div key={`part-canvas-${i}`} className="part-unit flow-part animate-fade-in">
+            <div className="insight-grid">
+              {cards.map((card: any, cardIdx: number) => (
+                <InsightCard
+                  key={card.id || `${toolPart?.toolCallId || 'canvas'}-${cardIdx}`}
+                  id={card.id || `${toolPart?.toolCallId || 'canvas'}-${cardIdx}`}
+                  type={card.type}
+                  title={card.title}
+                  description={card.explanation}
+                  data={card.data || []}
+                  chartType={card.chartType || 'bar'}
+                  config={card.config}
+                  compact={card.type !== 'table'}
+                  onPin={() => handlePin(card)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      }
+
       default: return null;
     }
   };
@@ -716,7 +1070,16 @@ export default function ChatPage() {
                       <div className="turn-body">
                         {(() => {
                           const parts = message.parts as DataAgentUIMessage['parts'];
-                          const stopIdx = parts.findIndex(p => p.type === 'tool-askClarification' || p.type === 'tool-previewQueryPlan');
+                          const clarificationIdx = parts.findIndex(p => p.type === 'tool-askClarification');
+                          const previewIdx = parts.findIndex(p => p.type === 'tool-previewQueryPlan');
+                          const hasExecutionAfterPreview = previewIdx !== -1 && parts
+                            .slice(previewIdx + 1)
+                            .some((nextPart) => isExecutionPartType((nextPart as any).type));
+                          const stopCandidates = [
+                            clarificationIdx,
+                            previewIdx !== -1 && !hasExecutionAfterPreview ? previewIdx : -1,
+                          ].filter(idx => idx !== -1);
+                          const stopIdx = stopCandidates.length > 0 ? Math.min(...stopCandidates) : -1;
                           const renderedParts = stopIdx !== -1 ? parts.slice(0, stopIdx + 1) : parts;
                           
                           return renderedParts.map((part, i, all) =>
@@ -849,10 +1212,10 @@ export default function ChatPage() {
       `}</style>
 
       <style jsx>{`
-        .chat-col { flex: 1; display: flex; flex-direction: column; height: 100%; min-width: 0; background: transparent; position: relative; }
-        .stream-zone { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+        .chat-col { flex: 1; display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: transparent; position: relative; }
+        .stream-zone { flex: 1; min-height: 0; overflow-y: auto; scroll-behavior: smooth; }
         
-        .message-list { max-width: 1000px; margin: 0 auto; padding: 80px 40px 300px; display: flex; flex-direction: column; gap: 80px; }
+        .message-list { max-width: 1000px; margin: 0 auto; padding: 80px 40px 180px; display: flex; flex-direction: column; gap: 64px; }
         
         .message-turn { position: relative; width: 100%; }
         
@@ -881,15 +1244,17 @@ export default function ChatPage() {
         .reasoning-container-wrapper { margin: 8px 0; }
 
         .input-zone {
-          position: sticky;
-          bottom: 32px;
+          position: relative;
+          flex-shrink: 0;
           margin: 0 auto;
           width: 100%;
-          max-width: 800px;
+          max-width: 880px;
+          padding: 0 40px 24px;
           z-index: 50;
         }
         
         .component-container { position: relative; display: flex; flex-direction: column; gap: 16px; }
+        .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
         .action-overlay { position: absolute; top: -12px; right: 12px; opacity: 0; transition: all 0.3s var(--spring); transform: translateY(4px); z-index: 20; }
         .component-container:hover .action-overlay { opacity: 1; transform: translateY(0); }
         .action-pill { display: flex; align-items: center; gap: 8px; padding: 10px 20px; font-size: 12px; font-weight: 700; color: var(--accent-primary); border-radius: 99px; }
@@ -898,7 +1263,7 @@ export default function ChatPage() {
         .sk-pulse { height: 100%; width: 100%; background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.05), transparent); animation: sk-flow 2s infinite; }
         @keyframes sk-flow { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 
-        .scroll-pills { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 14px 28px; border-radius: 99px; font-size: 12px; font-weight: 700; color: var(--accent-primary); z-index: 100; }
+        .scroll-pills { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 14px 28px; border-radius: 99px; font-size: 12px; font-weight: 700; color: var(--accent-primary); z-index: 100; }
 
         .error-boundary { max-width: 800px; margin: 40px auto; padding: 0 40px; position: relative; z-index: 100; }
         .error-inner { padding: 24px; border-radius: 24px; border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(255, 255, 255, 0.8); display: flex; align-items: center; gap: 20px; }
@@ -921,6 +1286,26 @@ export default function ChatPage() {
         .canvas-body { flex: 1; overflow: hidden; padding: 0 32px 32px; }
         .close-btn { color: var(--text-tertiary); padding: 8px; border-radius: 50%; }
         .close-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-primary); }
+
+        @media (max-width: 768px) {
+          .message-list {
+            padding: 72px 18px 150px;
+            gap: 44px;
+          }
+
+          .input-zone {
+            max-width: none;
+            padding: 0 14px 14px;
+          }
+
+          .user-turn-inner {
+            max-width: 92%;
+          }
+
+          .insight-grid {
+            grid-template-columns: 1fr;
+          }
+        }
 
 
       `}</style>

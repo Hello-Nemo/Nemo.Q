@@ -21,9 +21,30 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
   if (!rows || rows.length === 0) return null;
 
   const columns = Object.keys(rows[0]);
+  const hasRowAction = typeof onAction === 'function';
+
+  const columnLabels: Record<string, string> = {
+    user_country: '国家',
+    country: '国家',
+    sales_amount: '销售额',
+    aov: '客单价',
+    order_count: '订单量',
+    user_count: '用户数',
+    return_amount: '退货金额',
+    total_price: '订单金额',
+  };
+
+  const labelFor = (key: string) => columnLabels[key] || key.replace(/_/g, ' ');
+
+  const isNumericLike = (value: any) => {
+    if (typeof value === 'number') return Number.isFinite(value);
+    return typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value));
+  };
+
+  const isMoneyColumn = (key: string) => /amount|price|sales|aov|revenue|cost/i.test(key);
 
   const getColIcon = (key: string, value: any) => {
-    if (typeof value === 'number') return <Hash size={14} />;
+    if (isNumericLike(value)) return <Hash size={14} />;
     if (value instanceof Date || (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}/))) return <Calendar size={14} />;
     return <Type size={14} />;
   };
@@ -45,13 +66,14 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
 
     // 2. Number or Numeric String (Amount) handling
     // If it's a number, or a string that looks like a decimal amount (e.g., "100.00")
-    if (typeof val === 'number' || (typeof val === 'string' && val.match(/^-?\d+\.\d+$/))) {
+    if (isNumericLike(val)) {
       const num = Number(val);
       if (!isNaN(num)) {
-        return num.toLocaleString('zh-CN', {
+        const formatted = num.toLocaleString('zh-CN', {
           minimumFractionDigits: 0,
           maximumFractionDigits: 2
         });
+        return formatted;
       }
     }
     
@@ -78,30 +100,34 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
                 <th key={col}>
                   <div className="th-content">
                     <span className="th-icon">{getColIcon(col, rows[0][col])}</span>
-                    <span className="th-label">{col}</span>
+                    <span className="th-label">{labelFor(col)}</span>
                     <ArrowUpDown size={12} className="sort-trigger" />
                   </div>
                 </th>
               ))}
-              <th className="action-th" />
+              {hasRowAction && <th className="action-th" />}
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={i} onClick={() => onAction?.(row)}>
+              <tr key={i} className={hasRowAction ? 'is-clickable' : ''} onClick={() => onAction?.(row)}>
                 {columns.map((col) => {
                   const val = row[col];
                   return (
-                    <td key={col} className={typeof val === 'number' ? 'num-cell' : ''}>
-                      <span className="td-text">{formatValue(val)}</span>
+                    <td key={col} className={isNumericLike(val) ? 'num-cell' : ''}>
+                      <span className="td-text">
+                        {isMoneyColumn(col) && isNumericLike(val) ? '¥' : ''}{formatValue(val)}
+                      </span>
                     </td>
                   );
                 })}
-                <td className="action-td">
-                  <div className="action-hover-icon">
-                    <ChevronRight size={16} />
-                  </div>
-                </td>
+                {hasRowAction && (
+                  <td className="action-td">
+                    <div className="action-hover-icon">
+                      <ChevronRight size={16} />
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -141,6 +167,7 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
           width: 100%;
           border-collapse: separate;
           border-spacing: 0;
+          min-width: 560px;
         }
 
         th {
@@ -152,9 +179,9 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
           top: 0;
           z-index: 10;
         }
-        .th-content { display: flex; align-items: center; gap: 8px; }
+        .th-content { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
         .th-icon { color: var(--text-tertiary); opacity: 0.7; }
-        .th-label { font-size: 10px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+        .th-label { font-size: 11px; font-weight: 800; color: var(--text-tertiary); letter-spacing: 0.02em; }
         .sort-trigger { color: var(--text-tertiary); opacity: 0; transition: opacity 0.2s; }
         th:hover .sort-trigger { opacity: 1; }
 
@@ -168,7 +195,7 @@ export default function DataTable({ rows, rowCount, onAction }: DataTableProps) 
         .num-cell { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
         .null-label { color: var(--text-tertiary); font-style: italic; font-size: 12px; opacity: 0.5; }
 
-        tr { cursor: pointer; }
+        tr.is-clickable { cursor: pointer; }
         tr:hover td { background: rgba(0,0,0,0.01); }
         tr:hover .action-hover-icon { transform: translateX(4px); opacity: 1; color: var(--accent-primary); }
 

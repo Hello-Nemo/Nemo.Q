@@ -296,6 +296,7 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
           display: flex; 
           align-items: center; 
           justify-content: space-between; 
+          gap: 12px;
           cursor: pointer; 
           user-select: none;
         }
@@ -341,7 +342,7 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
           text-overflow: ellipsis; 
         }
         
-        .trigger-right { display: flex; align-items: center; gap: 14px; }
+        .trigger-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
         
         .view-toggle {
           display: flex;
@@ -360,6 +361,9 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
           font-weight: 700;
           color: var(--text-tertiary);
           transition: all 0.2s;
+          white-space: nowrap;
+          min-width: 76px;
+          justify-content: center;
         }
         .toggle-btn.active {
           background: #FFFFFF;
@@ -412,7 +416,7 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
         .copy-mini:hover { color: var(--accent-primary); background: rgba(99, 102, 241, 0.05); }
 
         .expand-hint { display: flex; align-items: center; gap: 6px; color: var(--text-tertiary); }
-        .hint-text { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        .hint-text { font-size: 10px; font-weight: 700; white-space: nowrap; }
         .arrow { transition: transform 0.4s var(--spring); }
         .arrow.up { transform: rotate(180deg); }
 
@@ -505,6 +509,15 @@ export default function SqlAudit({ sql = '', explanation = '', assumptions = [],
         @keyframes slide-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
         @media (max-width: 640px) {
+          .audit-trigger {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+          .trigger-right {
+            width: 100%;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
           .audit-grid { grid-template-columns: 1fr; }
           .audit-section.full-width { grid-column: span 1; }
         }
