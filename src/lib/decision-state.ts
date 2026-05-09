@@ -10,6 +10,11 @@ export type DecisionResolution = {
   selectedAnswer?: string;
 };
 
+export type ActiveDecisionTarget = {
+  messageIndex: number;
+  partIndex: number;
+};
+
 const DECISION_PART_TYPES = new Set([
   'tool-askClarification',
   'tool-previewQueryPlan',
@@ -23,6 +28,7 @@ const EXECUTION_PART_TYPES = new Set([
 ]);
 
 const getPartOutput = (part: Record<string, any>) => part?.output || part?.result;
+const getPartInput = (part: Record<string, any>) => part?.input || part?.args || part?.invocation?.args;
 
 const getTextFromMessage = (message: MessageLike) => {
   if (!Array.isArray(message.parts)) return '';
@@ -41,7 +47,35 @@ const hasExecutionAfter = (parts: Array<Record<string, any>>, index: number) => 
 export function getDecisionPartIndex(message?: MessageLike | null) {
   if (!message || !Array.isArray(message.parts)) return -1;
 
-  return message.parts.findIndex((part) => DECISION_PART_TYPES.has(part?.type));
+  return message.parts.findIndex((part) => isDecisionPartReady(part));
+}
+
+export function isDecisionPartReady(part?: Record<string, any> | null) {
+  if (!part || !DECISION_PART_TYPES.has(part.type)) return false;
+
+  if (part.state === 'input-streaming' || part.state === 'output-error') {
+    return false;
+  }
+
+  const output = getPartOutput(part);
+  const input = getPartInput(part);
+
+  if (part.type === 'tool-previewQueryPlan') {
+    if (part.state === 'output-available') return true;
+    if (part.state === 'input-available') return false;
+    if (typeof part.state === 'string') return false;
+    return !!(output || input);
+  }
+
+  if (part.state === 'input-available' || part.state === 'output-available') {
+    return true;
+  }
+
+  if (typeof part.state === 'string') {
+    return false;
+  }
+
+  return !!(output || input);
 }
 
 export function getDecisionResolution(
@@ -91,6 +125,18 @@ export function hasPendingDecision(messages: MessageLike[]) {
   }
 
   return false;
+}
+
+export function getActiveDecisionTarget(messages: MessageLike[]): ActiveDecisionTarget | null {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const partIndex = getDecisionPartIndex(messages[messageIndex]);
+    if (partIndex === -1) continue;
+    if (getDecisionResolution(messages, messageIndex).status !== 'pending') continue;
+
+    return { messageIndex, partIndex };
+  }
+
+  return null;
 }
 
 export function shouldBlockComposerSubmit({

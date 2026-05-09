@@ -115,8 +115,10 @@ import {
   type MessagesSnapshot,
 } from '@/lib/session-state';
 import {
+  getActiveDecisionTarget,
   getDecisionResolution,
   hasPendingDecision,
+  isDecisionPartReady,
 } from '@/lib/decision-state';
 
 export default function ChatPage() {
@@ -242,6 +244,18 @@ export default function ChatPage() {
 
   const isLoading = status === 'streaming' || status === 'submitted';
   const isDecisionPending = useMemo(() => hasPendingDecision(messages as any[]), [messages]);
+  const activeDecisionTarget = useMemo(() => getActiveDecisionTarget(messages as any[]), [messages]);
+
+  const [isTrayReady, setIsTrayReady] = useState(false);
+  useEffect(() => {
+    if (isDecisionPending) {
+      // Delay popup by 1.6s to allow the inline note to "stream" visually first
+      const timer = setTimeout(() => setIsTrayReady(true), 1600);
+      return () => clearTimeout(timer);
+    } else {
+      setIsTrayReady(false);
+    }
+  }, [isDecisionPending]);
 
   // Expert Fix: Safety wrapper to prevent stream collisions
   const safeSendMessage = useCallback((params: { text: string }) => {
@@ -294,6 +308,23 @@ export default function ChatPage() {
     }
   }, [messages, isAutoScrollEnabled, status]);
 
+  // Keep scroll locked to bottom smoothly when container resizes
+  // (e.g. when decisionTray animates in/out, or textarea grows)
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(() => {
+      if (isAutoScrollEnabled && scrollRef.current) {
+        isProgrammaticScroll.current = true;
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [isAutoScrollEnabled]);
+
   const startResize = useCallback((e: React.MouseEvent) => {
     isResizing.current = true;
     startX.current = e.clientX;
@@ -334,6 +365,38 @@ export default function ChatPage() {
     const summary = Object.entries(rowData).map(([k, v]) => `${k}: ${v}`).join(', ');
     safeSendMessage({ text: `针对这条记录深度分析其对业务的影响：${summary}` });
   };
+
+  const buildClarificationOptions = useCallback((args: any): DecisionOption[] => {
+    const baseOptions = Array.isArray(args.options) ? args.options : [];
+    const decisionOptions: DecisionOption[] = baseOptions.map((option: any) => (
+      typeof option === 'string'
+        ? {
+            label: option,
+            value: option,
+            recommended: option === args.recommendedOptionValue,
+          }
+        : {
+            label: option.label,
+            value: option.value,
+            description: option.description,
+            recommended: option.value === args.recommendedOptionValue,
+          }
+    ));
+    const defaultAssumption = args.defaultAssumption && args.defaultAssumption !== '无'
+      ? args.defaultAssumption
+      : '让 NEMO.Q 依据当前上下文继续';
+
+    if (decisionOptions.length > 0) {
+      decisionOptions.push({
+        label: '按默认理解继续',
+        value: '跳过确认',
+        description: defaultAssumption,
+        recommended: !args.recommendedOptionValue,
+      });
+    }
+
+    return decisionOptions;
+  }, []);
 
   const markPreviewPlanExecuted = useCallback((previewKey: string, displayData: any, result: any) => {
     setMessages((currentMessages) => currentMessages.map((message) => ({
@@ -664,48 +727,64 @@ export default function ChatPage() {
 
       case 'tool-askClarification': {
         const toolPart = part as any;
+        if (!isDecisionPartReady(toolPart)) return null;
+
         const args = getPartArgs(toolPart);
         const resolution = getDecisionResolution(messages as any[], messageIndex);
-        const baseOptions = Array.isArray(args.options) ? args.options : [];
-        const decisionOptions: DecisionOption[] = baseOptions.map((option: any) => (
-          typeof option === 'string'
-            ? {
-                label: option,
-                value: option,
-                recommended: option === args.recommendedOptionValue,
-              }
-            : {
-                label: option.label,
-                value: option.value,
-                description: option.description,
-                recommended: option.value === args.recommendedOptionValue,
-              }
-        ));
-        const defaultAssumption = args.defaultAssumption && args.defaultAssumption !== '无'
-          ? args.defaultAssumption
-          : '让 NEMO.Q 依据当前上下文继续';
-
-        if (decisionOptions.length > 0) {
-          decisionOptions.push({
-            label: '按默认理解继续',
-            value: '跳过确认',
-            description: defaultAssumption,
-            recommended: !args.recommendedOptionValue,
-          });
-        }
         
         return (
           <div key={`part-clarification-${i}`} className="part-unit flow-part animate-fade-in">
-            <DecisionPrompt
-              kind="clarification"
-              question={args.question || '按哪个口径继续？'}
-              options={decisionOptions}
-              context={args.context || ''}
-              status={resolution.status}
-              selectedAnswer={resolution.selectedAnswer}
-              recommendedOptionValue={args.recommendedOptionValue}
-              onSelect={(val) => safeSendMessage({ text: val === '跳过确认' ? '跳过确认' : `选择：${val}` })}
-            />
+            {resolution.status === 'pending' ? (
+              <div className="decision-inline-note">
+                <span className="note-title">我需要确认一下</span>
+                <span className="note-question">{args.question || '按哪个口径继续？'}</span>
+                <span className="note-hint">请在下方输入区选择或补充说明。</span>
+              </div>
+            ) : (
+              <DecisionPrompt
+                kind="clarification"
+                question={args.question || '按哪个口径继续？'}
+                context={args.context || ''}
+                status={resolution.status}
+                selectedAnswer={resolution.selectedAnswer}
+              />
+            )}
+            <style jsx>{`
+              .decision-inline-note {
+                max-width: 760px;
+                border-left: 2px solid rgba(255, 92, 0, 0.45);
+                padding: 4px 0 4px 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+              }
+              .decision-inline-note > span {
+                opacity: 0;
+                animation: note-fade-in 0.5s ease-out forwards;
+              }
+              .note-title {
+                color: var(--text-tertiary);
+                font-size: 11px;
+                font-weight: 800;
+                animation-delay: 0.1s !important;
+              }
+              .note-question {
+                color: var(--text-primary);
+                font-size: 14px;
+                font-weight: 800;
+                line-height: 1.4;
+                animation-delay: 0.6s !important;
+              }
+              .note-hint {
+                color: var(--text-secondary);
+                font-size: 12px;
+                animation-delay: 1.2s !important;
+              }
+              @keyframes note-fade-in {
+                from { opacity: 0; transform: translateY(2px); }
+                to { opacity: 1; transform: translateY(0); }
+              }
+            `}</style>
           </div>
         );
       }
@@ -713,6 +792,8 @@ export default function ChatPage() {
       case 'tool-previewQueryPlan': {
         const toolPart = part as any;
         if (!toolPart) return null;
+        if (!isDecisionPartReady(toolPart)) return null;
+
         const args = getPartArgs(toolPart);
         const output = getPartOutput(toolPart);
         
@@ -740,7 +821,6 @@ export default function ChatPage() {
         const embeddedExecutionState: PreviewExecutionState | undefined = displayData?.executionResult
           ? { status: 'success', result: displayData.executionResult }
           : executionState;
-        const isExecutable = !!displayData?.plan && !hasDownstreamExecution && !displayData?.executionResult;
         const isExecuting = executionState?.status === 'loading';
         const isExecuted = executionState?.status === 'success' || !!displayData?.executionResult || output?.requires_action === false;
         const resolution = getDecisionResolution(messages as any[], messageIndex);
@@ -750,21 +830,6 @@ export default function ChatPage() {
             ? 'executed'
             : resolution.status;
         const selectedAnswer = output?.selectedAnswer || resolution.selectedAnswer || (promptStatus === 'executed' ? '确认并执行' : undefined);
-        const previewOptions: DecisionOption[] = [
-          {
-            label: isExecutable ? '确认并执行' : '无法执行',
-            value: 'confirm_execute',
-            description: isExecutable ? '按当前计划取数并展示结果' : '这个预览缺少可执行查询计划',
-            recommended: isExecutable,
-            disabled: !isExecutable || isExecuting || isExecuted,
-          },
-          {
-            label: '调整计划',
-            value: 'request_revision',
-            description: '补充口径或让 NEMO.Q 重新生成',
-            disabled: isExecuting || isExecuted,
-          },
-        ];
         
         return (
           <div key={`part-preview-${i}`} className="part-unit flow-part animate-fade-in">
@@ -782,16 +847,13 @@ export default function ChatPage() {
 
               {renderPreviewExecution(previewKey, embeddedExecutionState)}
 
-              {!hasDownstreamExecution && (
+              {!hasDownstreamExecution && promptStatus !== 'pending' && promptStatus !== 'executing' && (
                 <DecisionPrompt
                   kind="preview"
                   question="这个查询计划可以执行吗？"
                   context={displayData?.explanation}
-                  options={previewOptions}
                   status={promptStatus}
                   selectedAnswer={selectedAnswer}
-                  onConfirmExecute={() => executePreviewPlan(previewKey, displayData)}
-                  onRequestRevision={() => safeSendMessage({ text: '我不确定，请重新调整' })}
                 />
               )}
             </div>
@@ -1050,6 +1112,73 @@ export default function ChatPage() {
     }
   };
 
+  const activeDecisionTray = (() => {
+    if (!activeDecisionTarget) return null;
+
+    const decisionMessage = messages[activeDecisionTarget.messageIndex] as any;
+    const decisionPart = decisionMessage?.parts?.[activeDecisionTarget.partIndex] as any;
+    if (!decisionPart) return null;
+
+    // Only delay the popup for clarification to allow the inline note to animate
+    if (decisionPart.type === 'tool-askClarification' && !isTrayReady) return null;
+
+    const args = getPartArgs(decisionPart);
+
+    if (decisionPart.type === 'tool-askClarification') {
+      return (
+        <DecisionPrompt
+          kind="clarification"
+          surface="composer"
+          question={args.question || '按哪个口径继续？'}
+          options={buildClarificationOptions(args)}
+          context={args.context || ''}
+          status="pending"
+          recommendedOptionValue={args.recommendedOptionValue}
+          onSelect={(val) => safeSendMessage({ text: val === '跳过确认' ? '跳过确认' : `选择：${val}` })}
+        />
+      );
+    }
+
+    if (decisionPart.type === 'tool-previewQueryPlan') {
+      const output = getPartOutput(decisionPart);
+      const displayData = output || args;
+      const previewKey = decisionPart?.toolCallId || `preview-${activeDecisionTarget.partIndex}`;
+      const executionState = executedPreviews[previewKey];
+      const isExecuting = executionState?.status === 'loading';
+      const isExecutable = !!displayData?.plan && !displayData?.executionResult;
+      const previewOptions: DecisionOption[] = [
+        {
+          label: isExecutable ? '确认并执行' : '无法执行',
+          value: 'confirm_execute',
+          description: isExecutable ? '按当前计划取数并展示结果' : '这个预览缺少可执行查询计划',
+          recommended: isExecutable,
+          disabled: !isExecutable || isExecuting,
+        },
+        {
+          label: '调整计划',
+          value: 'request_revision',
+          description: '补充口径或让 NEMO.Q 重新生成',
+          disabled: isExecuting,
+        },
+      ];
+
+      return (
+        <DecisionPrompt
+          kind="preview"
+          surface="composer"
+          question="这个查询计划可以执行吗？"
+          context={displayData?.explanation}
+          options={previewOptions}
+          status={isExecuting ? 'executing' : 'pending'}
+          onConfirmExecute={() => executePreviewPlan(previewKey, displayData)}
+          onRequestRevision={() => safeSendMessage({ text: '我不确定，请重新调整' })}
+        />
+      );
+    }
+
+    return null;
+  })();
+
   return (
     <WorkbenchLayout>
       <div className="ambient-bg">
@@ -1093,8 +1222,8 @@ export default function ChatPage() {
                       <div className="turn-body">
                         {(() => {
                           const parts = message.parts as DataAgentUIMessage['parts'];
-                          const clarificationIdx = parts.findIndex(p => p.type === 'tool-askClarification');
-                          const previewIdx = parts.findIndex(p => p.type === 'tool-previewQueryPlan');
+                          const clarificationIdx = parts.findIndex(p => p.type === 'tool-askClarification' && isDecisionPartReady(p as any));
+                          const previewIdx = parts.findIndex(p => p.type === 'tool-previewQueryPlan' && isDecisionPartReady(p as any));
                           const hasExecutionAfterPreview = previewIdx !== -1 && parts
                             .slice(previewIdx + 1)
                             .some((nextPart) => isExecutionPartType((nextPart as any).type));
@@ -1139,9 +1268,9 @@ export default function ChatPage() {
                 
                 // If assistant turn has started, check if it already contains active indicators
                 const hasReasoning = lastMessage.parts.some(p => p.type === 'reasoning');
-                const hasClarification = lastMessage.parts.some(p => p.type === 'tool-askClarification');
+                const hasReadyDecision = lastMessage.parts.some(p => isDecisionPartReady(p as any));
                 
-                if (hasReasoning || hasClarification) return null;
+                if (hasReasoning || hasReadyDecision) return null;
                 
                 // Fallback indicator for intermediate states (e.g. between tool calls)
                 return (
@@ -1182,8 +1311,9 @@ export default function ChatPage() {
 
         <div className="input-zone">
           <InputArea
-            isStreaming={isLoading}
+            isStreaming={isLoading && !isDecisionPending}
             isDecisionPending={isDecisionPending}
+            decisionTray={activeDecisionTray}
             onSend={(text) => safeSendMessage({ text })}
             onStop={() => stop()}
           />
