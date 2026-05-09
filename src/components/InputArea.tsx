@@ -1,25 +1,33 @@
 'use client';
 
 import React from 'react';
-import { Send, Square, Paperclip, Zap } from 'lucide-react';
+import { Send, Square, Paperclip } from 'lucide-react';
+import { shouldBlockComposerSubmit } from '@/lib/decision-state';
 
 interface InputAreaProps {
-  isLoading: boolean;
+  isStreaming: boolean;
+  isDecisionPending?: boolean;
   onSend: (message: string) => void;
   onStop: () => void;
 }
 
-export default function InputArea({ isLoading, onSend, onStop }: InputAreaProps) {
+export default function InputArea({ isStreaming, isDecisionPending = false, onSend, onStop }: InputAreaProps) {
   const [input, setInput] = React.useState('');
   const [isError, setIsError] = React.useState(false);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (input.trim() && !isLoading) {
+    const shouldBlockSubmit = shouldBlockComposerSubmit({
+      isStreaming,
+      isDecisionPending,
+      text: input,
+    });
+
+    if (!shouldBlockSubmit) {
       onSend(input);
       setInput('');
       setIsError(false);
-    } else if (!input.trim() && !isLoading) {
+    } else if (!input.trim() && !isStreaming) {
       setIsError(true);
       setTimeout(() => setIsError(false), 500);
     }
@@ -42,20 +50,24 @@ export default function InputArea({ isLoading, onSend, onStop }: InputAreaProps)
                 handleSubmit();
               }
             }}
-            placeholder="与 NEMO.Q 对话..."
+            placeholder={isDecisionPending ? '回答上方确认，或补充你的说明...' : '与 NEMO.Q 对话...'}
             className="input-field"
             rows={1}
           />
 
           <div className="action-hub">
-            {isLoading ? (
+            {isStreaming ? (
               <button type="button" onClick={onStop} className="hub-btn stop" title="STOP">
                 <Square size={16} fill="currentColor" />
               </button>
             ) : (
               <button 
                 type="submit" 
-                disabled={!input.trim()} 
+                disabled={shouldBlockComposerSubmit({
+                  isStreaming,
+                  isDecisionPending,
+                  text: input,
+                })}
                 className={`hub-btn send ${input.trim() ? 'active' : ''}`}
                 title="SEND"
               >

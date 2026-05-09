@@ -226,6 +226,7 @@ export const askClarification = tool({
       value: z.string().describe('选中该选项后代表的业务定义（如："daily_growth"）'),
       description: z.string().optional().describe('选项的详细说明'),
     })).describe('预设的结构化备选选项，方便用户直接点击'),
+    recommendedOptionValue: z.string().optional().describe('可选。若某个选项是推荐默认路径，填写该选项的 value；缺省时 UI 不强行推荐第一项。'),
     context: z.string().optional().describe('产生歧义的业务背景或逻辑冲突描述'),
   }),
   execute: async (args) => {
