@@ -29,7 +29,7 @@ export default function PlanVisualizer({ lineage, explanation }: PlanVisualizerP
       <div className="visualizer-header">
         <div className="type-badge">
           <Activity size={12} />
-          <span>{type.toUpperCase()}</span>
+          <span>{(type || 'plan').toUpperCase()}</span>
         </div>
         {isMultiPass && (
           <div className="feature-badge multi-pass">

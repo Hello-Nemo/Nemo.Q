@@ -136,7 +136,7 @@ export default function InsightCard(props: InsightCardProps) {
       <div className="card-header">
         <div className="header-info">
           <div className="title-stack">
-            <span className="card-type-label">{type.toUpperCase()}</span>
+            <span className="card-type-label">{(type || 'insight').toUpperCase()}</span>
             <h3 className="card-title">{title}</h3>
           </div>
         </div>
