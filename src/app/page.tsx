@@ -146,23 +146,24 @@ export default function ChatPage() {
   /**
    * 固定/取消固定卡片到画布
    */
-  const handlePin = (cardData: any) => {
-    const existing = pinnedCards.find(c => c.id === cardData.id);
-    if (existing) {
-      setPinnedCards(pinnedCards.filter(c => c.id !== cardData.id));
-      return;
-    }
-    setPinnedCards([...pinnedCards, { ...cardData, isPinned: true }]);
+  const handlePin = useCallback((cardData: any) => {
+    setPinnedCards(prev => {
+      const existing = prev.find(c => c.id === cardData.id);
+      if (existing) {
+        return prev.filter(c => c.id !== cardData.id);
+      }
+      return [...prev, { ...cardData, isPinned: true }];
+    });
     setIsCanvasOpen(true);
-  };
+  }, []);
 
   /**
    * 表格行交互操作
    */
-  const handleAction = (rowData: any) => {
+  const handleAction = useCallback((rowData: any) => {
     const summary = Object.entries(rowData).map(([k, v]) => `${k}: ${v}`).join(', ');
     safeSendMessage({ text: `针对这条记录深度分析其对业务的影响：${summary}` });
-  };
+  }, [safeSendMessage]);
 
   /**
    * 计算当前激活的决策托盘内容（在输入框上方弹出）

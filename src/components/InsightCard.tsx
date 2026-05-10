@@ -6,6 +6,7 @@ import {
   LineChart, Line, 
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer
 } from 'recharts';
 import { 
   Pin, 
@@ -49,69 +50,14 @@ interface InsightCardProps {
 
 const COLORS = ['#FF5C00', '#0F172A', '#6366F1', '#10B981', '#F59E0B', '#64748B'];
 
-export default function InsightCard(props: InsightCardProps) {
+const InsightCard = React.memo((props: InsightCardProps) => {
   const { 
     title, description, type, chartType, data, config, explanation, 
     audit, compact, isCertified, isPinned, onPin 
   } = props;
 
   const [isAuditOpen, setIsAuditOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'insight' | 'audit'>('insight');
-  const [isMounted, setIsMounted] = useState(false);
-  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
-  const chartRef = useRef<HTMLDivElement>(null);
   const chartHeight = compact ? 180 : 280;
-  
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsMounted(true);
-      if (typeof window !== 'undefined') {
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    if (!chartRef.current || type !== 'chart') return;
-
-    const element = chartRef.current;
-    let rafId: number | null = null;
-    
-    const updateSize = () => {
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        const rect = element.getBoundingClientRect();
-        const width = Math.floor(rect.width);
-        const height = Math.floor(rect.height);
-        setChartSize(prev => (
-          width > 0 &&
-          height > 0 &&
-          (prev.width !== width || prev.height !== height)
-            ? { width, height }
-            : prev
-        ));
-      });
-    };
-
-    updateSize();
-
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', updateSize);
-      return () => {
-        window.removeEventListener('resize', updateSize);
-        if (rafId !== null) cancelAnimationFrame(rafId);
-      };
-    }
-
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [type, data, chartHeight]);
 
   const renderKPI = () => {
     if (!data || data.length === 0) return null;
@@ -170,11 +116,15 @@ export default function InsightCard(props: InsightCardProps) {
         {type === 'kpi' && renderKPI()}
 
         {type === 'chart' && (
-          <div ref={chartRef} className="chart-wrapper" style={{ height: chartHeight, width: '100%', position: 'relative' }}>
-            {isMounted && chartSize.width > 0 && chartSize.height > 0 && (
-              <>
+          <div className="chart-wrapper" style={{ height: chartHeight, width: '100%', position: 'relative' }}>
+            {!data || data.length === 0 ? (
+              <div className="empty-state">
+                <p>暂无数据</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
                 {chartType === 'area' ? (
-                  <AreaChart width={chartSize.width} height={chartSize.height} data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#FF5C00" stopOpacity={0.15}/>
@@ -206,7 +156,7 @@ export default function InsightCard(props: InsightCardProps) {
                     />
                   </AreaChart>
                 ) : chartType === 'bar' ? (
-                  <BarChart width={chartSize.width} height={chartSize.height} data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis 
                       dataKey={xKey} 
@@ -230,7 +180,7 @@ export default function InsightCard(props: InsightCardProps) {
                     />
                   </BarChart>
                 ) : (
-                  <LineChart width={chartSize.width} height={chartSize.height} data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis 
                       dataKey={xKey} 
@@ -256,7 +206,7 @@ export default function InsightCard(props: InsightCardProps) {
                     />
                   </LineChart>
                 )}
-              </>
+              </ResponsiveContainer>
             )}
           </div>
         )}
@@ -364,9 +314,11 @@ export default function InsightCard(props: InsightCardProps) {
       `}</style>
     </div>
   );
-}
+});
 
-function CustomTooltip({ active, payload, label }: any) {
+export default InsightCard;
+
+const CustomTooltip = React.memo(({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="custom-tooltip">
@@ -376,4 +328,4 @@ function CustomTooltip({ active, payload, label }: any) {
     );
   }
   return null;
-}
+});

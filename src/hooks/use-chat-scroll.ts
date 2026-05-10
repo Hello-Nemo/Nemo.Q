@@ -60,15 +60,24 @@ export function useChatScroll(messages: any[], status: string) {
     const container = scrollRef.current;
     if (!container) return;
 
+    let rafId: number;
     const observer = new ResizeObserver(() => {
       if (isAutoScrollEnabled && scrollRef.current) {
-        isProgrammaticScroll.current = true;
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          if (scrollRef.current) {
+            isProgrammaticScroll.current = true;
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        });
       }
     });
 
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, [isAutoScrollEnabled]);
 
   return {

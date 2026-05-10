@@ -29,7 +29,10 @@ export function bridgeTool(aiSdkTool: any, name: string) {
         const result = await aiSdkTool.execute(params);
         return {
           content: [{ type: "text", text: typeof result === 'string' ? result : JSON.stringify(result, null, 2) }],
-          details: result,
+          // 深度展开：如果 result 是对象，直接平铺它的所有字段到根部
+          // 这样前端就可以直接访问 output.data 而不需要 output.details.data
+          ...(typeof result === 'object' ? result : {}),
+          details: result, // 保留一份作为备份
         };
       } catch (error: any) {
         return {
