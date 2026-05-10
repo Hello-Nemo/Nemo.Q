@@ -2,16 +2,16 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
-import { PostgresDataSource, IDataSource } from '../db-connector';
-import { SQLCompiler } from '../semantic/compiler';
-import { QueryPlan, SemanticLayer, queryPlanSchema } from '../semantic/types';
+import { PostgresDataSource, IDataSource } from './db-connector';
+import { SQLCompiler } from './semantic/compiler';
+import { QueryPlan, SemanticLayer, queryPlanSchema } from './semantic/types';
 
 
 // 加载语义层配置
 const getSemanticLayer = (projectName: string = 'default'): SemanticLayer => {
   try {
-    const projectPath = path.join(process.cwd(), `src/lib/semantic/${projectName}.json`);
-    const rootPath = path.join(process.cwd(), 'src/lib/semantic-layer.json');
+    const projectPath = path.join(process.cwd(), `skills/nemo-q/lib/semantic/${projectName}.json`);
+    const rootPath = path.join(process.cwd(), 'skills/nemo-q/lib/semantic-layer.json');
     const targetPath = fs.existsSync(projectPath) ? projectPath : rootPath;
     
     if (fs.existsSync(targetPath)) {
@@ -216,24 +216,6 @@ export const listSemanticAtoms = tool({
   },
 });
 
-export const askClarification = tool({
-
-  description: '【最高优先级工具】。当用户请求“收入”、“利润”、“用户数”等敏感口径，且你未在语义层中找到 100% 匹配的指标 ID 时，必须调用此工具。严禁在未经确认的情况下猜测口径。调用后任务会暂停等待用户选择。',
-    inputSchema: z.object({
-      question: z.string().describe('需要用户澄清的具体问题'),
-      options: z.array(z.object({
-        label: z.string().describe('选项显示的文本（如："按日环比"）'),
-        value: z.string().describe('选中该选项后代表的业务定义（如："daily_growth"）'),
-        description: z.string().optional().describe('选项的详细说明'),
-      })).describe('预设的结构化备选选项，方便用户直接点击'),
-      recommendedOptionValue: z.string().optional().describe('可选。若某个选项是推荐默认路径，填写该选项的 value；缺省时 UI 不强行推荐第一项。'),
-      context: z.string().optional().describe('产生歧义的业务背景或逻辑冲突描述'),
-    }),
-  execute: async (args) => {
-    // 在 UI 侧，这会被标记为 requires_action，暂停 Agent 循环等待用户输入
-    return { ...args, requires_action: true };
-  },
-});
 
 /**
  * 语义化查询：通过 Query Plan 进行标准指标查询
@@ -290,7 +272,6 @@ export const dbTools = {
   executeQuery,
   getTableSamples,
   searchTables,
-  askClarification,
   semanticQuery,
   previewQueryPlan,
   listSemanticAtoms,

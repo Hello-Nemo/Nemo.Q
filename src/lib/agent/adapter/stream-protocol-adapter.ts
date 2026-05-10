@@ -17,12 +17,9 @@ export class StreamProtocolAdapter {
     private session: AgentSession,
     private messageId: string
   ) {
-    this.currentTextId = generateId(); // 始终使用新生成的 ID，确保它是独立的
+    this.currentTextId = generateId();
   }
 
-  /**
-   * 开启新的文本段落 ID，确保新内容出现在底部
-   */
   private startNewTextPart() {
     if (this.hasStartedText) {
       this.writer.write({ type: 'text-end', id: this.currentTextId });
@@ -31,9 +28,6 @@ export class StreamProtocolAdapter {
     this.hasStartedText = false;
   }
 
-  /**
-   * 开启新的推理段落 ID
-   */
   private startNewReasoningPart() {
     if (this.hasStartedReasoning) {
       this.writer.write({ type: 'reasoning-end', id: this.reasoningId });
@@ -42,12 +36,8 @@ export class StreamProtocolAdapter {
     this.hasStartedReasoning = false;
   }
 
-  /**
-   * 开始监听并适配事件
-   */
   async adapt() {
     console.log('[StreamProtocolAdapter] Starting adaptation...');
-
     this.writer.write({ type: 'start', messageId: this.messageId });
 
     return new Promise<void>((resolve) => {
@@ -56,10 +46,8 @@ export class StreamProtocolAdapter {
           switch (event.type) {
             case "message_update":
               const assistantEvent = event.assistantMessageEvent;
-              
               switch (assistantEvent.type) {
                 case "text_start":
-                  // 只要开始了新的文字段落，如果之前在推理或输出工具，就强制另起一段
                   if (this.hasStartedReasoning || this.hasStartedText) {
                     this.startNewReasoningPart();
                     this.startNewTextPart();
@@ -87,7 +75,6 @@ export class StreamProtocolAdapter {
                   break;
 
                 case "thinking_start":
-                  // 推理开始，也要另起一段，确保它在当前所有内容的下方
                   if (this.hasStartedText || this.hasStartedReasoning) {
                     this.startNewTextPart();
                     this.startNewReasoningPart();
@@ -120,36 +107,28 @@ export class StreamProtocolAdapter {
                   break;
 
                 case "toolcall_start": {
-                  // 工具调用开始，也要确保之前的文本和推理已正确断开
                   this.startNewTextPart();
                   this.startNewReasoningPart();
-                  
                   this.pendingContentIndices.push(assistantEvent.contentIndex);
-                  // 如果能从事件中直接拿到 ID，则可以尝试提前发送 tool-input-start
-                  const toolCallId = (assistantEvent as any).id;
-                  if (toolCallId) {
-                    this.writer.write({
-                      type: 'tool-input-start',
-                      toolCallId,
-                      toolName: (assistantEvent as any).toolName
-                    });
-                  }
+                  const toolCallId = (assistantEvent as any).id || generateId();
+                  this.writer.write({
+                    type: 'tool-input-start',
+                    toolCallId,
+                    toolName: (assistantEvent as any).toolName || 'unknown'
+                  });
                   break;
                 }
 
                 case "toolcall_delta": {
                   const contentIndex = assistantEvent.contentIndex;
                   const toolCallId = (assistantEvent as any).id;
-                  
                   if (toolCallId) {
-                    // 如果有 ID，直接流式发送
                     this.writer.write({
                       type: 'tool-input-delta',
                       toolCallId,
                       inputTextDelta: assistantEvent.delta
                     });
                   } else {
-                    // 否则继续缓冲
                     if (!this.pendingToolDeltas.has(contentIndex)) {
                       this.pendingToolDeltas.set(contentIndex, []);
                     }
@@ -157,28 +136,19 @@ export class StreamProtocolAdapter {
                   }
                   break;
                 }
-
-                case "toolcall_end":
-                  break;
               }
               break;
 
             case "tool_execution_start": {
               const contentIndex = this.pendingContentIndices.shift() ?? 0;
+              if (this.hasStartedText) this.startNewTextPart();
               
-              // 如果正在输出文本，断开它
-              if (this.hasStartedText) {
-                this.startNewTextPart();
-              }
-              
-              // 确保 tool-input-start 已发送（如果之前没发过）
               this.writer.write({
                 type: 'tool-input-start',
                 toolCallId: event.toolCallId,
                 toolName: event.toolName
               });
               
-              // 发送缓冲的 delta
               if (this.pendingToolDeltas.has(contentIndex)) {
                 for (const delta of this.pendingToolDeltas.get(contentIndex)!) {
                   this.writer.write({
@@ -194,33 +164,27 @@ export class StreamProtocolAdapter {
                 type: 'tool-input-available',
                 toolCallId: event.toolCallId,
                 toolName: event.toolName,
-                input: event.args
+                input: event.args || {}
               });
               break;
             }
 
             case "tool_execution_end": {
               let result = event.result;
-              // 自动解包 Pi Agent 的内容包装
               if (result && typeof result === 'object' && 'details' in result) {
                 result = result.details;
               }
-              
               this.writer.write({
                 type: 'tool-output-available',
                 toolCallId: event.toolCallId,
-                output: result
+                output: result ?? {}
               });
               break;
             }
 
             case "agent_end":
-              if (this.hasStartedReasoning) {
-                this.writer.write({ type: 'reasoning-end', id: this.reasoningId });
-              }
-              if (this.hasStartedText) {
-                this.writer.write({ type: 'text-end', id: this.currentTextId });
-              }
+              if (this.hasStartedReasoning) this.writer.write({ type: 'reasoning-end', id: this.reasoningId });
+              if (this.hasStartedText) this.writer.write({ type: 'text-end', id: this.currentTextId });
               this.writer.write({ type: 'finish-step' });
               this.writer.write({ type: 'finish' });
               unsubscribe();
@@ -239,5 +203,66 @@ export class StreamProtocolAdapter {
         }
       });
     });
+  }
+
+  /**
+   * 将 UI 消息历史摄取到 Pi Agent 的 SessionManager 中
+   */
+  static async ingestHistory(sessionManager: any, messages: UIMessage[]) {
+    for (const m of messages) {
+      try {
+        switch (m.role as string) {
+          case 'user':
+            const text = m.parts.filter(p => p.type === 'text').map(p => (p as any).text).join('\n');
+            if (text) sessionManager.appendMessage({ role: 'user', content: text, timestamp: Date.now() });
+            break;
+
+          case 'assistant':
+            const content = m.parts.map(p => this.mapAssistantPart(p)).filter(Boolean);
+            if (content.length > 0) {
+              sessionManager.appendMessage({
+                role: 'assistant',
+                content,
+                timestamp: Date.now(),
+                api: 'openai-responses', provider: 'deepseek', model: 'deepseek-v4-flash',
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+                stopReason: 'stop'
+              } as any);
+            }
+            break;
+
+          case 'tool':
+            m.parts.forEach(p => {
+              if (p.type === 'tool-result' || p.type.startsWith('tool-')) {
+                sessionManager.appendMessage({
+                  role: 'toolResult',
+                  toolCallId: (p as any).toolCallId,
+                  toolName: (p as any).toolName || p.type.replace('tool-', ''),
+                  content: [{ type: 'text', text: JSON.stringify((p as any).result || (p as any).output) }],
+                  isError: (p as any).isError || false,
+                  timestamp: Date.now()
+                } as any);
+              }
+            });
+            break;
+        }
+      } catch (err) {
+        console.warn('[StreamProtocolAdapter] Failed to ingest history message:', err);
+      }
+    }
+  }
+
+  private static mapAssistantPart(p: any) {
+    if (p.type === 'text') return { type: 'text', text: p.text || '' };
+    if (p.type === 'reasoning') return { type: 'thinking', thinking: p.text || '' };
+    if (p.type === 'tool-invocation' || p.type === 'tool-call' || p.type.startsWith('tool-')) {
+      return {
+        type: 'toolCall',
+        id: p.toolCallId,
+        name: p.toolName || p.type.replace('tool-', ''),
+        arguments: p.args || p.input || {}
+      };
+    }
+    return null;
   }
 }

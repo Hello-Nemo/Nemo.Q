@@ -1,4 +1,4 @@
-import { AgentEngineFactory } from '@/lib/agent-engines/factory';
+import { AgentEngineFactory } from '@/lib/agent/factory';
 
 export const maxDuration = 120; // 增加到 120s，以支持更复杂的链式思考和画像生成
 

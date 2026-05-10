@@ -1,8 +1,10 @@
-import type { dataAgent } from '@/lib/agent';
-import type { InferAgentUIMessage } from 'ai';
+import type { UIMessage } from 'ai';
 
-// 从 agent 推断类型，获得完整的类型安全
-export type DataAgentUIMessage = InferAgentUIMessage<typeof dataAgent>;
+/**
+ * 统一的 Message 类型定义，不再依赖具体的 Agent 实例
+ */
+export type DataAgentUIMessage = UIMessage;
+
 export type TimestampedDataAgentUIMessage = DataAgentUIMessage & {
   createdAt?: string | number | Date;
 };
