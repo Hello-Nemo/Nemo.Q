@@ -44,12 +44,6 @@ const hasExecutionAfter = (parts: Array<Record<string, any>>, index: number) => 
   parts.slice(index + 1).some((part) => EXECUTION_PART_TYPES.has(part?.type))
 );
 
-export function getDecisionPartIndex(message?: MessageLike | null) {
-  if (!message || !Array.isArray(message.parts)) return -1;
-
-  return message.parts.findIndex((part) => isDecisionPartReady(part));
-}
-
 export function isDecisionPartReady(part?: Record<string, any> | null) {
   if (!part || !DECISION_PART_TYPES.has(part.type)) return false;
 
@@ -78,12 +72,29 @@ export function isDecisionPartReady(part?: Record<string, any> | null) {
   return !!(output || input);
 }
 
+export function getDecisionPartIndices(message?: MessageLike | null) {
+  if (!message || !Array.isArray(message.parts)) return [] as number[];
+
+  return message.parts.reduce<number[]>((indices, part, index) => {
+    if (isDecisionPartReady(part)) {
+      indices.push(index);
+    }
+    return indices;
+  }, []);
+}
+
+export function getDecisionPartIndex(message?: MessageLike | null) {
+  const indices = getDecisionPartIndices(message);
+  return indices.length > 0 ? indices[indices.length - 1] : -1;
+}
+
 export function getDecisionResolution(
   messages: MessageLike[],
-  messageIndex: number
+  messageIndex: number,
+  partIndex?: number
 ): DecisionResolution {
   const message = messages[messageIndex];
-  const decisionIndex = getDecisionPartIndex(message);
+  const decisionIndex = typeof partIndex === 'number' ? partIndex : getDecisionPartIndex(message);
 
   if (decisionIndex === -1) {
     return { status: 'resolved', selectedAnswer: undefined };
@@ -120,8 +131,12 @@ export function getDecisionResolution(
 
 export function hasPendingDecision(messages: MessageLike[]) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (getDecisionPartIndex(messages[index]) === -1) continue;
-    return getDecisionResolution(messages, index).status === 'pending';
+    const decisionIndices = getDecisionPartIndices(messages[index]);
+    for (let partOffset = decisionIndices.length - 1; partOffset >= 0; partOffset -= 1) {
+      if (getDecisionResolution(messages, index, decisionIndices[partOffset]).status === 'pending') {
+        return true;
+      }
+    }
   }
 
   return false;
@@ -129,11 +144,13 @@ export function hasPendingDecision(messages: MessageLike[]) {
 
 export function getActiveDecisionTarget(messages: MessageLike[]): ActiveDecisionTarget | null {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
-    const partIndex = getDecisionPartIndex(messages[messageIndex]);
-    if (partIndex === -1) continue;
-    if (getDecisionResolution(messages, messageIndex).status !== 'pending') continue;
+    const decisionIndices = getDecisionPartIndices(messages[messageIndex]);
+    for (let partOffset = decisionIndices.length - 1; partOffset >= 0; partOffset -= 1) {
+      const partIndex = decisionIndices[partOffset];
+      if (getDecisionResolution(messages, messageIndex, partIndex).status !== 'pending') continue;
 
-    return { messageIndex, partIndex };
+      return { messageIndex, partIndex };
+    }
   }
 
   return null;

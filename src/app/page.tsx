@@ -730,7 +730,7 @@ export default function ChatPage() {
         if (!isDecisionPartReady(toolPart)) return null;
 
         const args = getPartArgs(toolPart);
-        const resolution = getDecisionResolution(messages as any[], messageIndex);
+        const resolution = getDecisionResolution(messages as any[], messageIndex, i);
         
         return (
           <div key={`part-clarification-${i}`} className="part-unit flow-part animate-fade-in">
@@ -823,7 +823,7 @@ export default function ChatPage() {
           : executionState;
         const isExecuting = executionState?.status === 'loading';
         const isExecuted = executionState?.status === 'success' || !!displayData?.executionResult || output?.requires_action === false;
-        const resolution = getDecisionResolution(messages as any[], messageIndex);
+        const resolution = getDecisionResolution(messages as any[], messageIndex, i);
         const promptStatus = isExecuting
           ? 'executing'
           : isExecuted

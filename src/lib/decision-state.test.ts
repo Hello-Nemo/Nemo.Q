@@ -196,6 +196,36 @@ test('returns the latest pending decision target when older decisions are resolv
   });
 });
 
+test('tracks a later pending decision in the same assistant message', () => {
+  const messages = [
+    assistantMessage([
+      {
+        type: 'tool-previewQueryPlan',
+        toolCallId: 'preview-resolved',
+        output: {
+          requires_action: false,
+          selectedAnswer: '确认并执行',
+        },
+      },
+      {
+        type: 'tool-askClarification',
+        toolCallId: 'clarification-latest',
+        input: { question: '请选择需要展开的地区' },
+      },
+    ]),
+  ];
+
+  assert.deepEqual(getDecisionResolution(messages, 0, 1), {
+    status: 'pending',
+    selectedAnswer: undefined,
+  });
+  assert.deepEqual(getActiveDecisionTarget(messages), {
+    messageIndex: 0,
+    partIndex: 1,
+  });
+  assert.equal(hasPendingDecision(messages), true);
+});
+
 test('does not block free text composer submission just because a decision is pending', () => {
   assert.equal(
     shouldBlockComposerSubmit({
