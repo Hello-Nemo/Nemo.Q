@@ -1,5 +1,4 @@
-import { createAgentUIStreamResponse } from 'ai';
-import { createDataAgent } from '@/lib/agent';
+import { AgentEngineFactory } from '@/lib/agent-engines/factory';
 
 export const maxDuration = 120; // 增加到 120s，以支持更复杂的链式思考和画像生成
 
@@ -38,10 +37,8 @@ export async function POST(req: Request) {
       });
     }
 
-    return await createAgentUIStreamResponse({
-      agent: createDataAgent(runtimeContext),
-      uiMessages: cleanMessages,
-    });
+    const engine = AgentEngineFactory.create('pi-coding-agent');
+    return await engine.stream(cleanMessages, { runtimeContext });
   } catch (error: any) {
     console.error('[CHAT_API_ERROR]', error);
     return new Response(JSON.stringify({ 
