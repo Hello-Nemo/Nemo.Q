@@ -76,29 +76,41 @@ export default function InsightCard(props: InsightCardProps) {
     if (!chartRef.current || type !== 'chart') return;
 
     const element = chartRef.current;
+    let rafId: number | null = null;
+    
     const updateSize = () => {
-      const rect = element.getBoundingClientRect();
-      const width = Math.floor(rect.width);
-      const height = Math.floor(rect.height);
-      setChartSize(prev => (
-        width > 0 &&
-        height > 0 &&
-        (prev.width !== width || prev.height !== height)
-          ? { width, height }
-          : prev
-      ));
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const rect = element.getBoundingClientRect();
+        const width = Math.floor(rect.width);
+        const height = Math.floor(rect.height);
+        setChartSize(prev => (
+          width > 0 &&
+          height > 0 &&
+          (prev.width !== width || prev.height !== height)
+            ? { width, height }
+            : prev
+        ));
+      });
     };
 
     updateSize();
 
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', updateSize);
-      return () => window.removeEventListener('resize', updateSize);
+      return () => {
+        window.removeEventListener('resize', updateSize);
+        if (rafId !== null) cancelAnimationFrame(rafId);
+      };
     }
 
     const observer = new ResizeObserver(updateSize);
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, [type, data, chartHeight]);
 
   const renderKPI = () => {

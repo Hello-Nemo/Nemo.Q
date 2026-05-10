@@ -14,6 +14,9 @@ import { DefaultChatTransport } from 'ai';
 // 类型定义
 import type { DataAgentUIMessage, TimestampedDataAgentUIMessage } from '@/lib/types';
 
+// 错误边界
+import { AppErrorBoundary } from '@/components/ErrorBoundary';
+
 // 基础 UI 组件
 import WorkbenchLayout from '@/components/WorkbenchLayout';
 import InputArea from '@/components/InputArea';
@@ -60,7 +63,6 @@ export default function ChatPage() {
     id: currentSessionId || 'new-session',
     messages: [],
     transport,
-    experimental_throttle: 50,
   });
 
   // 4. 应用逻辑钩子
@@ -81,6 +83,10 @@ export default function ChatPage() {
    * 还原会话消息历史
    */
   const hydrateMessages = useCallback((sessionId: string, nextMessages: TimestampedDataAgentUIMessage[]) => {
+    if (hydratedSnapshotRef.current?.sessionId === sessionId &&
+        hydratedSnapshotRef.current?.fingerprint === getMessagesFingerprint(nextMessages)) {
+      return;
+    }
     hydratedSnapshotRef.current = {
       sessionId,
       fingerprint: getMessagesFingerprint(nextMessages),
@@ -288,63 +294,38 @@ export default function ChatPage() {
                           const stopIdx = stopCandidates.length > 0 ? Math.min(...stopCandidates) : -1;
                           const renderedParts = stopIdx !== -1 ? parts.slice(0, stopIdx + 1) : parts;
                           
-                          return renderedParts.map((part, i, all) => (
-                            <MessagePart
-                              key={`part-${idx}-${i}`}
-                              part={part}
-                              index={i}
-                              allParts={all}
-                              messageIndex={idx}
-                              messages={messages}
-                              isLoading={isLoading}
-                              executedPreviews={executedPreviews}
-                              pinnedCards={pinnedCards}
-                              onPin={handlePin}
-                              onAction={handleAction}
-                              onExecutePreview={executePreviewPlan}
-                            />
-                          ));
+                          return (
+                            <>
+                              {renderedParts.map((part, i, all) => (
+                                <MessagePart
+                                  key={`part-${idx}-${i}`}
+                                  part={part}
+                                  index={i}
+                                  allParts={all}
+                                  messageIndex={idx}
+                                  messages={messages}
+                                  isLoading={isLoading}
+                                  executedPreviews={executedPreviews}
+                                  pinnedCards={pinnedCards}
+                                  onPin={handlePin}
+                                  onAction={handleAction}
+                                  onExecutePreview={executePreviewPlan}
+                                />
+                              ))}
+                              {/* 思考状态指示器：仅在助手最后一条消息且尚未输出任何具体部分时展示 */}
+                              {isLoading && idx === messages.length - 1 && parts.length === 0 && (
+                                <div className="mt-4">
+                                  <ThinkingIndicator />
+                                </div>
+                              )}
+                            </>
+                          );
                         })()}
                       </div>
                     </div>
                   )}
                 </div>
               ))}
-
-              {/* 思考状态指示器 */}
-              {(() => {
-                if (!isLoading) return null;
-                const lastMessage = messages[messages.length - 1];
-                if (!lastMessage || lastMessage.role !== 'assistant' || lastMessage.parts.length === 0) {
-                  return (
-                    <div key="thinking-indicator-turn" className="message-turn assistant loading-turn">
-                      <div className="assistant-turn-content">
-                        <div className="turn-meta">
-                          <div className="agent-orb pulsing" />
-                          <span className="agent-label">NEMO.Q</span>
-                          <div className="meta-sep" />
-                          <span className="timestamp">系统就绪</span>
-                        </div>
-                        <div className="turn-body">
-                          <ThinkingIndicator />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-                const hasReasoning = lastMessage.parts.some(p => p.type === 'reasoning');
-                const hasReadyDecision = lastMessage.parts.some(p => isDecisionPartReady(p as any));
-                if (hasReasoning || hasReadyDecision) return null;
-                return (
-                  <div key="thinking-indicator-turn" className="message-turn assistant loading-turn">
-                    <div className="assistant-turn-content">
-                      <div className="turn-body">
-                        <ThinkingIndicator />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           )}
 

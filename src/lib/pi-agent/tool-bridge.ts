@@ -1,12 +1,15 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
 
 /**
  * 将 AI SDK 的 Tool 转换为 Pi Agent 的 Tool
  */
 export function bridgeTool(aiSdkTool: any, name: string) {
-  const jsonSchema = zodToJsonSchema(aiSdkTool.parameters || z.object({}));
+  const inputSchema = aiSdkTool.inputSchema || aiSdkTool.parameters;
+  if (!inputSchema) {
+    throw new Error(`Tool ${name} has no inputSchema or parameters`);
+  }
+  const jsonSchema = inputSchema.toJSON ? inputSchema.toJSON() : inputSchema;
   
   // 移除可能导致 TypeBox 报错的属性
   if (jsonSchema && typeof jsonSchema === 'object') {
@@ -16,6 +19,7 @@ export function bridgeTool(aiSdkTool: any, name: string) {
 
   return defineTool({
     name: name,
+    label: aiSdkTool.description || name, // Pi Agent 要求的 label 字段
     description: aiSdkTool.description || "",
     // Pi 使用 TypeBox，但底层其实是 JSON Schema
     // 我们可以尝试直接传入转换后的 schema

@@ -300,6 +300,7 @@ export default function MessagePart({
     case 'tool-render_chart': {
       const toolPart = part as any;
       if (!toolPart) return null;
+      const args = getPartArgs(toolPart);
       const output = getPartOutput(toolPart);
       if (!output) return <div key={`part-chart-sk-${index}`} className="skeleton-card soft-surface" />;
 
@@ -314,6 +315,10 @@ export default function MessagePart({
               description={output?.description}
               data={output?.data || []}
               chartType={output?.type === 'bar' ? 'bar' : 'area'}
+              config={{
+                xAxis: output?.xAxisKey || args?.xAxisKey,
+                yAxis: output?.yAxisKey || args?.yAxisKey,
+              }}
               isCertified={output?.audit?.isCertified}
               audit={output?.audit}
               isPinned={pinnedCards.some(c => c.id === cardId)}
@@ -321,6 +326,10 @@ export default function MessagePart({
                 id: cardId,
                 type: 'chart',
                 title: output?.title,
+                config: {
+                  xAxis: output?.xAxisKey || args?.xAxisKey,
+                  yAxis: output?.yAxisKey || args?.yAxisKey,
+                },
                 data: output?.data,
                 chartType: output?.type === 'bar' ? 'bar' : 'area',
               })}

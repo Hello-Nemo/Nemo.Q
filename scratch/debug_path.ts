@@ -15,6 +15,7 @@ async function main() {
       authStorage,
       modelRegistry,
       resourceLoader: new DefaultResourceLoader({
+        cwd: process.cwd(),
         agentDir,
         systemPromptOverride: () => "Test"
       })
