@@ -1,4 +1,4 @@
-import { dataAgent } from '../src/lib/agent';
+import { dataAgent } from '@/lib/agent';
 import dotenv from 'dotenv';
 dotenv.config();
 

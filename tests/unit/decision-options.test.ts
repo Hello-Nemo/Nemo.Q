@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getDecisionOptionKey } from './decision-options';
+import { getDecisionOptionKey } from '@/lib/decision-options';
 
 test('creates unique keys for duplicated decision option values', () => {
   const options = [

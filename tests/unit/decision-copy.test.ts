@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getCompactDecisionQuestion } from './decision-copy';
+import { getCompactDecisionQuestion } from '@/lib/decision-copy';
 
 test('keeps short composer decision questions unchanged', () => {
   assert.equal(

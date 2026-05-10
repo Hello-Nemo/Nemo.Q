@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { SQLCompiler } from './compiler';
-import { QueryPlan, SemanticLayer } from './types';
-import { semanticQuery } from '../tools/db';
+import { SQLCompiler } from '@/lib/semantic/compiler';
+import { QueryPlan, SemanticLayer } from '@/lib/semantic/types';
+import { semanticQuery } from '@/lib/tools/db';
 
 const semanticLayer: SemanticLayer = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'src/lib/semantic-layer.json'), 'utf8')

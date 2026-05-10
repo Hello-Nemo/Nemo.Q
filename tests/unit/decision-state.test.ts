@@ -7,7 +7,7 @@ import {
   isDecisionPartReady,
   hasPendingDecision,
   shouldBlockComposerSubmit,
-} from './decision-state';
+} from '@/lib/decision-state';
 
 const assistantMessage = (parts: any[]) => ({
   id: `assistant-${parts[0]?.type || 'part'}`,

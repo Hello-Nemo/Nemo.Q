@@ -1,7 +1,7 @@
 import { generateText, stepCountIs } from 'ai';
 import { deepseek } from '@ai-sdk/deepseek';
-import { dbTools } from '../tools/db';
-import { chartTools } from '../tools/chart';
+import { dbTools } from '@/lib/tools/db';
+import { chartTools } from '@/lib/tools/chart';
 import fs from 'fs';
 import path from 'path';
 import 'dotenv/config';

@@ -5,7 +5,7 @@ import {
   getCachedSessionMessages,
   getMessagesFingerprint,
   shouldPersistMessages,
-} from './session-state';
+} from '@/lib/session-state';
 
 const userMessage = (id: string, text: string) => ({
   id,

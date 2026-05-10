@@ -13,7 +13,7 @@ interface TestCase {
 }
 
 async function runEval() {
-  const datasetPath = path.join(process.cwd(), 'src/lib/eval/dataset.json');
+  const datasetPath = path.join(process.cwd(), 'tests/eval/dataset.json');
   const dataset: TestCase[] = JSON.parse(fs.readFileSync(datasetPath, 'utf8'));
 
   console.log(`\n🚀 开始评测：共 ${dataset.length} 个测试用例\n`);
@@ -198,7 +198,7 @@ async function runEval() {
   console.log(`\n✅ 评测完成！平均分: ${finalScore.toFixed(2)} / 100\n`);
 
   // 输出报告文件
-  const reportPath = path.join(process.cwd(), 'src/lib/eval/report.json');
+  const reportPath = path.join(process.cwd(), 'tests/eval/report.json');
   fs.writeFileSync(reportPath, JSON.stringify({
     timestamp: new Date().toISOString(),
     averageScore: finalScore,
