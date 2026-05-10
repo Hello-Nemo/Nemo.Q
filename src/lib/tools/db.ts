@@ -218,17 +218,17 @@ export const listSemanticAtoms = tool({
 
 export const askClarification = tool({
 
-  description: '当用户的需求存在业务歧义、口径不明确或需要补充信息时调用。该工具会暂停当前任务并向用户寻求澄清。',
-  inputSchema: z.object({
-    question: z.string().describe('需要用户澄清的具体问题'),
-    options: z.array(z.object({
-      label: z.string().describe('选项显示的文本（如："按日环比"）'),
-      value: z.string().describe('选中该选项后代表的业务定义（如："daily_growth"）'),
-      description: z.string().optional().describe('选项的详细说明'),
-    })).describe('预设的结构化备选选项，方便用户直接点击'),
-    recommendedOptionValue: z.string().optional().describe('可选。若某个选项是推荐默认路径，填写该选项的 value；缺省时 UI 不强行推荐第一项。'),
-    context: z.string().optional().describe('产生歧义的业务背景或逻辑冲突描述'),
-  }),
+  description: '【最高优先级工具】。当用户请求“收入”、“利润”、“用户数”等敏感口径，且你未在语义层中找到 100% 匹配的指标 ID 时，必须调用此工具。严禁在未经确认的情况下猜测口径。调用后任务会暂停等待用户选择。',
+    inputSchema: z.object({
+      question: z.string().describe('需要用户澄清的具体问题'),
+      options: z.array(z.object({
+        label: z.string().describe('选项显示的文本（如："按日环比"）'),
+        value: z.string().describe('选中该选项后代表的业务定义（如："daily_growth"）'),
+        description: z.string().optional().describe('选项的详细说明'),
+      })).describe('预设的结构化备选选项，方便用户直接点击'),
+      recommendedOptionValue: z.string().optional().describe('可选。若某个选项是推荐默认路径，填写该选项的 value；缺省时 UI 不强行推荐第一项。'),
+      context: z.string().optional().describe('产生歧义的业务背景或逻辑冲突描述'),
+    }),
   execute: async (args) => {
     // 在 UI 侧，这会被标记为 requires_action，暂停 Agent 循环等待用户输入
     return { ...args, requires_action: true };
@@ -239,7 +239,7 @@ export const askClarification = tool({
  * 语义化查询：通过 Query Plan 进行标准指标查询
  */
 export const semanticQuery = tool({
-  description: '通过语义层进行标准指标查询。这是最推荐的取数方式，能够保证 100% 准确性。',
+  description: '通过语义层进行标准指标查询。前提：必须已通过 listSemanticAtoms 确认指标 ID，或已通过 askClarification 确认业务口径。',
   inputSchema: z.object({
     explanation: z.string().describe('用自然语言说明本次查询的业务意图。'),
     plan: queryPlanSchema.describe('结构化的查询计划 (Query Plan)'),

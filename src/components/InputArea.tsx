@@ -113,20 +113,20 @@ export default function InputArea({
           position: relative;
           overflow: visible;
           border-radius: 22px;
-          background: rgba(255, 255, 255, 0.65);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          transition: transform 0.14s ease-out, border-color 0.14s ease-out, box-shadow 0.14s ease-out, background 0.14s ease-out;
+          background: rgba(255, 255, 255, 0.15);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          backdrop-filter: blur(24px) saturate(160%);
+          -webkit-backdrop-filter: blur(24px) saturate(160%);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+          transition: all 0.2s ease-out;
         }
         .composer-frame:focus-within {
-          transform: translateY(-1px);
-          box-shadow: var(--shadow-deep);
-          background: rgba(255, 255, 255, 0.85);
+          background: rgba(255, 255, 255, 0.25);
+          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
         }
         .composer-frame.with-decision {
-          border-color: rgba(255, 92, 0, 0.25);
-          box-shadow: 0 20px 48px -20px rgba(255, 92, 0, 0.15), 0 0 0 1px rgba(255, 92, 0, 0.02);
-          background: linear-gradient(to bottom, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.7));
+          background: rgba(255, 255, 255, 0.2);
+          border-color: rgba(255, 92, 0, 0.15);
         }
         .input-form { width: 100%; position: relative; }
         .decision-tray-wrapper {
@@ -136,10 +136,13 @@ export default function InputArea({
           overflow: hidden;
         }
         .decision-tray {
-          padding: 8px 10px 0;
+          padding: 12px 14px 4px;
         }
         .decision-tray :global(.decision-prompt) {
           max-width: none;
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
         }
         
         .input-island {

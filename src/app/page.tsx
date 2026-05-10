@@ -419,9 +419,21 @@ export default function ChatPage() {
       {/* 页面布局样式 */}
       <style jsx>{`
         .chat-col { flex: 1; display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: transparent; position: relative; }
-        .stream-zone { flex: 1; min-height: 0; overflow-y: auto; scroll-behavior: smooth; }
+        .stream-zone { 
+          flex: 1; 
+          min-height: 0; 
+          overflow-y: auto; 
+          scroll-behavior: smooth;
+        }
         
-        .message-list { max-width: 1000px; margin: 0 auto; padding: 80px 40px 180px; display: flex; flex-direction: column; gap: 64px; }
+        .message-list { 
+          max-width: 1000px; 
+          margin: 0 auto; 
+          padding: 80px 40px 60px; 
+          display: flex; 
+          flex-direction: column; 
+          gap: 64px; 
+        }
         
         .message-turn { position: relative; width: 100%; }
         

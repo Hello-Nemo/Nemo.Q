@@ -77,7 +77,7 @@ export default function DecisionPrompt({
   onRequestRevision,
   onConfirmExecute,
 }: DecisionPromptProps) {
-  const normalizedOptions = options.map((option) => normalizeOption(option, recommendedOptionValue));
+  const normalizedOptions = options.map((option) => normalizeOption(option, recommendedOptionValue)).slice(0, 3);
   const isPending = status === 'pending';
   const isBusy = status === 'executing';
   const isFinal = status === 'resolved' || status === 'executed';
@@ -133,15 +133,20 @@ export default function DecisionPrompt({
                     className={`decision-option ${option.recommended ? 'recommended' : ''}`}
                     disabled={!isPending || option.disabled}
                     onClick={() => handleSelect(option)}
-                    title={option.description || option.label}
+                    title={isComposer ? undefined : (option.description || option.label)}
                   >
                     <span className="option-content-wrapper">
                       <span className="option-copy">
                         <span className="option-title">
                           {option.label}
                           {option.recommended && <span className="recommended-badge">推荐</span>}
+                          {isComposer && option.description && (
+                            <span className="info-trigger" data-tooltip={option.description}>
+                              <CircleHelp size={13} style={{ pointerEvents: 'none' }} />
+                            </span>
+                          )}
                         </span>
-                        {option.description && <span className="option-desc">{option.description}</span>}
+                        {!isComposer && option.description && <span className="option-desc">{option.description}</span>}
                       </span>
                     </span>
                     {option.value === 'request_revision' ? <RotateCcw size={14} /> : <ArrowRight size={14} />}
@@ -273,10 +278,9 @@ export default function DecisionPrompt({
           display: flex;
           flex-direction: column;
           align-items: stretch;
-          gap: 8px;
+          gap: 6px;
           min-width: 0;
           max-width: none;
-          overflow-x: visible;
         }
 
         .decision-option {
@@ -295,16 +299,15 @@ export default function DecisionPrompt({
         }
 
         .composer .decision-option {
-          min-height: 44px;
+          min-height: 40px;
           flex: none;
-          max-width: none;
           width: 100%;
-          padding: 10px 14px;
+          padding: 8px 12px;
           border-radius: 10px;
-          gap: 12px;
-          border-color: rgba(15, 23, 42, 0.08);
-          background: rgba(255, 255, 255, 0.5);
-          box-shadow: none;
+          gap: 8px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: #FFFFFF !important;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
 
         .decision-option:not(:disabled):hover {
@@ -331,8 +334,8 @@ export default function DecisionPrompt({
         }
 
         .composer .decision-option.recommended {
-          border-color: rgba(255, 92, 0, 0.34);
-          background: rgba(255, 248, 244, 0.6);
+          border-color: rgba(15, 23, 42, 0.08); /* 初始状态保持低调 */
+          background: #FFFFFF !important;
         }
 
         .option-content-wrapper {
@@ -341,6 +344,57 @@ export default function DecisionPrompt({
           gap: 12px;
           min-width: 0;
           flex: 1;
+        }
+
+        .composer .option-content-wrapper {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          flex: 1;
+        }
+
+        .info-trigger {
+          display: inline-flex;
+          align-items: center;
+          color: var(--text-tertiary);
+          opacity: 0.6;
+          transition: all 0.12s;
+          position: relative;
+        }
+
+        .info-trigger:hover {
+          opacity: 1;
+          color: var(--accent-primary);
+        }
+
+        /* CSS Tooltip 核心样式：改为右侧弹出 */
+        .info-trigger[data-tooltip]::after {
+          content: attr(data-tooltip);
+          position: absolute;
+          left: 140%; /* 移至右侧 */
+          top: 50%;
+          transform: translateY(-50%) translateX(-8px); /* 初始位置略微偏左 */
+          padding: 6px 12px;
+          background: #1e293b;
+          color: #ffffff;
+          font-size: 11px;
+          font-weight: 500;
+          line-height: 1.5;
+          white-space: pre-wrap;
+          border-radius: 6px;
+          box-shadow: 4px 4px 16px rgba(0,0,0,0.2);
+          opacity: 0;
+          pointer-events: none;
+          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+          z-index: 1000;
+          width: max-content;
+          max-width: 240px;
+        }
+
+        .info-trigger[data-tooltip]:hover::after {
+          opacity: 1;
+          transform: translateY(-50%) translateX(0); /* 归位 */
         }
 
         .composer .option-content-wrapper::before {
@@ -355,10 +409,22 @@ export default function DecisionPrompt({
           margin-top: 1px;
         }
 
-        .composer .decision-option:not(:disabled):hover .option-content-wrapper::before,
-        .composer .decision-option.recommended .option-content-wrapper::before {
+        .composer .decision-option:not(:disabled):hover {
+          border-color: var(--accent-primary) !important;
+          background: rgba(255, 92, 0, 0.02) !important;
+        }
+
+        .composer .decision-option:not(:disabled):hover .option-content-wrapper::before {
           border-color: var(--accent-primary);
-          background: rgba(255, 92, 0, 0.1);
+          background: var(--accent-primary);
+          box-shadow: inset 0 0 0 3px #FFFFFF;
+        }
+
+        /* 移除默认推荐状态下的强交互，改为静默提示 */
+        .composer .decision-option.recommended .option-content-wrapper::before {
+          border-color: rgba(15, 23, 42, 0.2);
+          background: transparent;
+          box-shadow: none;
         }
 
         .option-copy {
