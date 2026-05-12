@@ -29,22 +29,18 @@ export class PiCodingAgentEngine implements AgentEngine {
       execute: async ({ writer }) => {
         const messageId = generateId();
         try {
-          console.log('[PiCodingAgentEngine] Inside execute...');
           // 1. 初始化 Auth 和 Model
           const authStorage = AuthStorage.create();
-          console.log('[PiCodingAgentEngine] AuthStorage created');
-
+          
           if (process.env.DEEPSEEK_API_KEY) {
             authStorage.setRuntimeApiKey("deepseek", process.env.DEEPSEEK_API_KEY);
-            console.log('[PiCodingAgentEngine] API Key set');
           }
           
           const modelRegistry = ModelRegistry.create(authStorage);
-          console.log('[PiCodingAgentEngine] ModelRegistry created');
           
           // 2. 选择模型
-          const model = getModel("deepseek", "deepseek-v4-flash") || (await modelRegistry.getAvailable())[0];
-          console.log('[PiCodingAgentEngine] Model selected:', model?.provider, model?.id);
+          const targetModel = (options?.model || "deepseek-v4-flash") as "deepseek-v4-flash" | "deepseek-v4-pro";
+          const model = getModel("deepseek", targetModel) || (await modelRegistry.getAvailable())[0];
 
           // 3. 基础工具 (框架级)
           const customTools = [
@@ -67,10 +63,8 @@ export class PiCodingAgentEngine implements AgentEngine {
             }
           });
           await loader.reload();
-          console.log('[PiCodingAgentEngine] ResourceLoader initialized with global system prompt');
 
           // 5. 创建 Session 并还原历史
-          console.log('[PiCodingAgentEngine] Creating session and restoring history...');
           const sessionManager = SessionManager.inMemory();
           
           // 还原历史消息 (不包含当前最后一条)
@@ -86,11 +80,9 @@ export class PiCodingAgentEngine implements AgentEngine {
             customTools,
             resourceLoader: loader
           });
-          console.log('[PiCodingAgentEngine] Session created with history');
 
           // 6. 转换历史消息并启动适配器
           const lastMessage = messages[messages.length - 1];
-          console.log('[PiCodingAgentEngine] Last message:', JSON.stringify(lastMessage));
           
           const promptText = lastMessage.parts
             .filter(part => part.type === 'text')

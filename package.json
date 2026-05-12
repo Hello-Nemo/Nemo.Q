@@ -25,6 +25,7 @@
     "@earendil-works/pi-ai": "^0.74.0",
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sinclair/typebox": "^0.34.49",
     "ai": "^6.0.174",
     "dotenv": "^17.4.2",
     "framer-motion": "^12.38.0",

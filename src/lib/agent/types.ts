@@ -2,6 +2,7 @@ import { UIMessage } from 'ai';
 
 export interface AgentEngineOptions {
   runtimeContext?: string;
+  model?: string;
   onStreamUpdate?: (data: any) => void;
 }
 

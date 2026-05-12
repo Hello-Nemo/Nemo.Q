@@ -170,7 +170,7 @@ export default function InputArea({
           background: transparent;
         }
 
-        .util-btn { color: var(--text-tertiary); padding: 8px; transition: color 0.12s ease-out, background 0.12s ease-out; }
+        .util-btn { color: var(--text-tertiary); padding: 8px; transition: color 0.12s ease-out, background 0.12s ease-out; flex-shrink: 0; }
         .util-btn:hover { color: var(--accent-primary); background: rgba(255, 92, 0, 0.05); border-radius: 50%; }
 
         .input-field {

@@ -37,6 +37,7 @@ import { useQueryExecution } from '@/hooks/use-query-execution';
 // 业务组件
 import WelcomeView from '@/components/chat/WelcomeView';
 import MessagePart from '@/components/chat/MessagePart';
+import ModelSwitcher from '@/components/ModelSwitcher';
 
 // 动态导入大型组件
 const InsightCanvas = dynamic(() => import('@/components/InsightCanvas'), { ssr: false });
@@ -58,11 +59,15 @@ export default function ChatPage() {
   const { canvasWidth, startResize } = useCanvasResize(480); // 画布尺寸调整
 
   // 3. 聊天核心配置 (AI SDK)
+  const [selectedModel, setSelectedModel] = useState<string>('deepseek-v4-flash');
   const transport = useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
   const { messages, sendMessage, status, stop, error, setMessages } = useChat<TimestampedDataAgentUIMessage>({
     id: currentSessionId || 'new-session',
     messages: [],
     transport,
+    body: {
+      model: selectedModel
+    }
   });
 
   // 4. 应用逻辑钩子
@@ -248,6 +253,10 @@ export default function ChatPage() {
 
       {/* 左侧主聊天区域 */}
       <div className="chat-col">
+        <div className="chat-header">
+          <ModelSwitcher model={selectedModel} onChange={setSelectedModel} />
+        </div>
+        
         <div className="stream-zone" ref={scrollRef} onScroll={handleScroll}>
           {messages.length === 0 ? <WelcomeView onSendMessage={safeSendMessage} /> : (
             <div className="message-list">
@@ -420,6 +429,15 @@ export default function ChatPage() {
       {/* 页面布局样式 */}
       <style jsx>{`
         .chat-col { flex: 1; display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: transparent; position: relative; }
+        
+        .chat-header {
+          display: flex;
+          align-items: center;
+          padding: 12px 24px;
+          flex-shrink: 0;
+          z-index: 40;
+        }
+
         .stream-zone { 
           flex: 1; 
           min-height: 0; 

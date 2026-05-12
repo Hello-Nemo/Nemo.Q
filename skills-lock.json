@@ -1,6 +1,13 @@
 {
   "version": 1,
   "skills": {
+    "agent-stock": {
+      "source": "AnoyiX/agent-stock",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/agent-stock/SKILL.md",
+      "computedHash": "2d9a2328e5088100948d6a85108edc2627285399ced6b7fb7fd1515a46f60e5a"
+    },
     "ai-sdk": {
       "source": "vercel/ai",
       "sourceType": "github",

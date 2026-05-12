@@ -4,7 +4,7 @@ export const maxDuration = 120; // 增加到 120s，以支持更复杂的链式�
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages, model } = await req.json();
     
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: 'No messages provided' }), { 
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     }
 
     const engine = AgentEngineFactory.create('pi-coding-agent');
-    return await engine.stream(cleanMessages, { runtimeContext });
+    return await engine.stream(cleanMessages, { runtimeContext, model });
   } catch (error: any) {
     console.error('[CHAT_API_ERROR]', error);
     return new Response(JSON.stringify({ 
