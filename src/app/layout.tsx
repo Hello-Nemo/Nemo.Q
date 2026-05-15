@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, Outfit, JetBrains_Mono, Noto_Sans_SC } from 'next/font/google';
 import Script from 'next/script';
 import { HistoryProvider } from '@/components/HistoryContext';
+import StyledJsxRegistry from './registry';
 import './globals.css';
 
 const inter = Inter({ 
@@ -70,9 +71,11 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <Script src="/theme.js" strategy="afterInteractive" />
-        <HistoryProvider>
-          {children}
-        </HistoryProvider>
+        <StyledJsxRegistry>
+          <HistoryProvider>
+            {children}
+          </HistoryProvider>
+        </StyledJsxRegistry>
       </body>
     </html>
   );

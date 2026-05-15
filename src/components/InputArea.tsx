@@ -22,6 +22,44 @@ export default function InputArea({
 }: InputAreaProps) {
   const [input, setInput] = React.useState('');
   const [isError, setIsError] = React.useState(false);
+  const [inputHistory, setInputHistory] = React.useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = React.useState(-1);
+  const [draftInput, setDraftInput] = React.useState('');
+
+  // Load history from localStorage on mount
+  React.useEffect(() => {
+    const saved = localStorage.getItem('nemo_input_history');
+    if (saved) {
+      try {
+        setInputHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load input history:', e);
+      }
+    }
+  }, []);
+
+  const handleHistoryNavigation = (direction: 'up' | 'down') => {
+    if (direction === 'up') {
+      if (historyIndex < inputHistory.length - 1) {
+        const nextIndex = historyIndex + 1;
+        if (historyIndex === -1) {
+          setDraftInput(input);
+        }
+        setHistoryIndex(nextIndex);
+        setInput(inputHistory[nextIndex]);
+      }
+    } else if (direction === 'down') {
+      if (historyIndex > -1) {
+        const nextIndex = historyIndex - 1;
+        setHistoryIndex(nextIndex);
+        if (nextIndex === -1) {
+          setInput(draftInput);
+        } else {
+          setInput(inputHistory[nextIndex]);
+        }
+      }
+    }
+  };
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -33,6 +71,14 @@ export default function InputArea({
 
     if (!shouldBlockSubmit) {
       onSend(input);
+      
+      // Update history: newest first, remove duplicates, limit to 50
+      const newHistory = [input, ...inputHistory.filter(h => h !== input)].slice(0, 50);
+      setInputHistory(newHistory);
+      localStorage.setItem('nemo_input_history', JSON.stringify(newHistory));
+      setHistoryIndex(-1);
+      setDraftInput('');
+      
       setInput('');
       setIsError(false);
     } else if (!input.trim() && !isStreaming) {
@@ -73,6 +119,14 @@ export default function InputArea({
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSubmit();
+                } else if (e.key === 'ArrowUp' && (e.currentTarget.selectionStart === 0 || input === '')) {
+                  // Only navigate history if cursor is at the beginning or input is empty
+                  e.preventDefault();
+                  handleHistoryNavigation('up');
+                } else if (e.key === 'ArrowDown' && (e.currentTarget.selectionEnd === input.length || input === '')) {
+                  // Only navigate history if cursor is at the end or input is empty
+                  e.preventDefault();
+                  handleHistoryNavigation('down');
                 }
               }}
               placeholder={isDecisionPending ? '回答确认，或补充你的说明...' : '与 NEMO.Q 对话...'}

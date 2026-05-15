@@ -27,6 +27,7 @@ import { useHistory } from '@/components/HistoryContext';
 import { getCachedSessionMessages, getMessagesFingerprint } from '@/lib/session-state';
 import { getActiveDecisionTarget, hasPendingDecision, isDecisionPartReady } from '@/lib/decision-state';
 import { getPartArgs, getPartOutput, isExecutionPartType, buildClarificationOptions } from '@/lib/chat-utils';
+import { sendChatMessage } from '@/lib/chat-send';
 
 // 自定义钩子 (Hooks)
 import { useChatPersistence } from '@/hooks/use-chat-persistence';
@@ -65,9 +66,6 @@ export default function ChatPage() {
     id: currentSessionId || 'new-session',
     messages: [],
     transport,
-    body: {
-      model: selectedModel
-    }
   });
 
   // 4. 应用逻辑钩子
@@ -142,11 +140,13 @@ export default function ChatPage() {
   const safeSendMessage = useCallback((params: { text: string }) => {
     if (isLoading) {
       stop();
-      setTimeout(() => { sendMessage(params); }, 10);
+      setTimeout(() => {
+        void sendChatMessage(sendMessage, selectedModel, params);
+      }, 10);
       return;
     }
-    sendMessage(params);
-  }, [isLoading, stop, sendMessage]);
+    void sendChatMessage(sendMessage, selectedModel, params);
+  }, [isLoading, stop, sendMessage, selectedModel]);
 
   /**
    * 固定/取消固定卡片到画布
@@ -433,7 +433,8 @@ export default function ChatPage() {
         .chat-header {
           display: flex;
           align-items: center;
-          padding: 12px 24px;
+          height: 64px;
+          padding: 0 24px;
           flex-shrink: 0;
           z-index: 40;
         }
