@@ -1,5 +1,5 @@
-import { executeSemanticQueryPlan } from '@/lib/tools/db';
-import { queryPlanSchema } from '@/lib/semantic/types';
+import { executeSemanticQueryPlan } from '../../../../../skills/nemo-q/lib/db';
+import { queryPlanSchema } from '../../../../../skills/nemo-q/lib/semantic/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;

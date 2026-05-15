@@ -5,7 +5,7 @@ import { ErrorBoundary as ReactErrorBoundary } from 'react-error-boundary';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface ErrorFallbackProps {
-  error: Error;
+  error: any;
   resetErrorBoundary: () => void;
 }
 
@@ -198,7 +198,7 @@ interface AppErrorBoundaryProps {
  * 捕获所有未处理的 React 错误，防止白屏
  */
 export function AppErrorBoundary({ children }: AppErrorBoundaryProps) {
-  const handleError = (error: Error, info: { componentStack: string }) => {
+  const handleError = (error: any, info: any) => {
     console.error('[ErrorBoundary] Caught error:', error);
     console.error('[ErrorBoundary] Component stack:', info.componentStack);
     

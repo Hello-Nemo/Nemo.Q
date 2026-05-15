@@ -31,17 +31,17 @@ async function main() {
     switch (command) {
       case 'schema': {
         const schema = params.schema || 'public';
-        const result = await dbTools.getSchema.execute({ schema });
+        const result = await dbTools.getSchema.execute!({ schema }, { toolCallId: 'cli', messages: [] });
         output(result);
         break;
       }
       case 'atoms': {
-        const result = await dbTools.listSemanticAtoms.execute({
+        const result = await dbTools.listSemanticAtoms.execute!({
           type: params.type || 'all',
           keyword: params.keyword,
           limit: params.limit || 20,
           offset: params.offset || 0
-        });
+        }, { toolCallId: 'cli', messages: [] });
         output(result);
         break;
       }
@@ -49,10 +49,10 @@ async function main() {
         if (!params.plan || !params.explanation) {
           throw new Error('Missing required params: plan, explanation');
         }
-        const result = await dbTools.semanticQuery.execute({
+        const result = await dbTools.semanticQuery.execute!({
           plan: params.plan as QueryPlan,
           explanation: params.explanation
-        });
+        }, { toolCallId: 'cli', messages: [] });
         output(result);
         break;
       }
@@ -60,11 +60,11 @@ async function main() {
         if (!params.sql || !params.explanation || !params.assumptions) {
           throw new Error('Missing required params: sql, explanation, assumptions');
         }
-        const result = await dbTools.executeQuery.execute({
+        const result = await dbTools.executeQuery.execute!({
           sql: params.sql,
           explanation: params.explanation,
           assumptions: params.assumptions
-        });
+        }, { toolCallId: 'cli', messages: [] });
         output(result);
         break;
       }
@@ -72,9 +72,9 @@ async function main() {
         if (!params.tableName) {
           throw new Error('Missing required param: tableName');
         }
-        const result = await dbTools.getTableSamples.execute({
+        const result = await dbTools.getTableSamples.execute!({
           tableName: params.tableName
-        });
+        }, { toolCallId: 'cli', messages: [] });
         output(result);
         break;
       }
@@ -82,10 +82,10 @@ async function main() {
         if (!params.plan || !params.explanation) {
           throw new Error('Missing required params: plan, explanation');
         }
-        const result = await dbTools.previewQueryPlan.execute({
+        const result = await dbTools.previewQueryPlan.execute!({
           plan: params.plan as QueryPlan,
           explanation: params.explanation
-        });
+        }, { toolCallId: 'cli', messages: [] });
         output(result);
         break;
       }

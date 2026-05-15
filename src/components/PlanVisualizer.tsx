@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   Box
 } from 'lucide-react';
-import { Lineage } from '@/lib/semantic/types';
+import { Lineage } from '../../skills/nemo-q/lib/semantic/types';
 
 interface PlanVisualizerProps {
   lineage: Lineage;
