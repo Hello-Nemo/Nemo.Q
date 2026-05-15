@@ -5,16 +5,18 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "build": "opennextjs-cloudflare build",
     "dev": "next dev",
     "cli": "tsx scripts/cli.ts",
     "eval": "tsx -r dotenv/config scripts/run-eval.ts",
     "onboard": "tsx scripts/onboard-db.ts",
-    "build": "next build",
     "start": "next start",
     "test": "tsx --test tests/unit/**/*.test.ts",
     "test:integration": "tsx tests/integration/semantic-compiler.test.ts",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview"
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "keywords": [],
   "author": "",
