@@ -45,5 +45,6 @@ artifacts/
 implementation_plan.md
 task.md
 walkthrough.md
-videos/dist/
+dist/
+videos/
 logs/
