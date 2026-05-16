@@ -1,0 +1,27 @@
+diff --git a/dist/config.js b/dist/config.js
+index b89eed0aa85b89fbb1809e0eb147cf8fc395f9d6..877667268efe512a2a12e623fbaf0c48c25d8fc4 100644
+--- a/dist/config.js
++++ b/dist/config.js
+@@ -329,7 +329,21 @@ export function getInteractiveAssetsDir() {
+ export function getBundledInteractiveAssetPath(name) {
+     return join(getInteractiveAssetsDir(), name);
+ }
+-const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
++function readPackageMetadata() {
++    try {
++        return JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
++    }
++    catch {
++        return {
++            name: "@earendil-works/pi-coding-agent",
++            version: "0.74.0",
++            piConfig: {
++                configDir: ".pi",
++            },
++        };
++    }
++}
++const pkg = readPackageMetadata();
+ const piConfigName = pkg.piConfig?.name;
+ export const PACKAGE_NAME = pkg.name || "@earendil-works/pi-coding-agent";
+ export const APP_NAME = piConfigName || "pi";

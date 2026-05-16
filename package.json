@@ -55,5 +55,10 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "wrangler": "^4.92.0"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@earendil-works/pi-coding-agent@0.74.0": "patches/@earendil-works__pi-coding-agent@0.74.0.patch"
+    }
   }
 }
