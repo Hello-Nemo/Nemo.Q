@@ -8,6 +8,7 @@ const nextConfig = {
     'pg-cloudflare'
   ],
   allowedDevOrigins: ['0.0.0.0', '127.0.0.1', 'localhost'],
+  output: 'standalone',
 };
 
 export default nextConfig;

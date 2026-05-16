@@ -5,7 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "build": "next build",
+    "build": "next build && opennextjs-cloudflare build --skipNextBuild",
     "dev": "next dev",
     "cli": "tsx scripts/cli.ts",
     "eval": "tsx -r dotenv/config scripts/run-eval.ts",
