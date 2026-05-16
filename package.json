@@ -5,7 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "build": "next build --webpack && find .next/standalone -type f \\( -name \"*.node\" -o -name \"*.png\" -o -name \"*.wasm\" -o -name \"capsize-font-metrics.json\" \\) -delete && opennextjs-cloudflare build --skipNextBuild",
+    "build": "next build && find .next/standalone -type f \\( -name \"*.node\" -o -name \"*.png\" -o -name \"*.wasm\" -o -name \"capsize-font-metrics.json\" \\) -delete && opennextjs-cloudflare build --skipNextBuild && npx esbuild .open-next/server-functions/default/handler.mjs --minify --outfile=.open-next/server-functions/default/handler.mjs --allow-overwrite",
     "dev": "next dev",
     "cli": "tsx skills/nemo-q/cli.ts",
     "start": "next start",

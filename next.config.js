@@ -1,17 +1,21 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   serverExternalPackages: [
-    '@earendil-works/pi-ai',
-    '@earendil-works/pi-coding-agent',
-    '@earendil-works/pi-agent-core',
     'pg',
     'pg-cloudflare'
   ],
   allowedDevOrigins: ['0.0.0.0', '127.0.0.1', 'localhost'],
   output: 'standalone',
-  outputFileTracingIncludes: {
-    '/api/chat': ['./package.json', './skills/**/*', './src/lib/prompts/**/*'],
-    '/api/query/execute-plan': ['./package.json', './skills/**/*'],
+  turbopack: {
+    resolveAlias: {
+      '@mariozechner/clipboard': './src/lib/mocks/clipboard-mock.js',
+    },
+  },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.resolve.alias['@mariozechner/clipboard'] = false;
+    }
+    return config;
   },
 };
 
