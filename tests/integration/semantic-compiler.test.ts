@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { SQLCompiler } from '@/lib/semantic/compiler';
-import { QueryPlan, SemanticLayer } from '@/lib/semantic/types';
-import { semanticQuery } from '@/lib/tools/db';
+import { SQLCompiler, dbTools } from '../../skills/nemo-q';
+import type { QueryPlan, SemanticLayer } from '../../skills/nemo-q';
 
 const semanticLayer: SemanticLayer = JSON.parse(
-  fs.readFileSync(path.join(process.cwd(), 'src/lib/semantic-layer.json'), 'utf8')
+  fs.readFileSync(path.join(process.cwd(), 'skills/nemo-q/lib/semantic-layer.json'), 'utf8')
 );
 
 const compiler = new SQLCompiler(semanticLayer);
@@ -382,7 +381,7 @@ async function runTest() {
     '未知过滤字段: gross_margin'
   );
 
-  const semanticQueryResult = await (semanticQuery as any).execute({
+  const semanticQueryResult = await (dbTools.semanticQuery as any).execute({
     explanation: '查询语义层不存在的毛利率指标',
     plan: {
       intent: 'metric_query',

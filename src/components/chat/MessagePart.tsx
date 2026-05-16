@@ -16,6 +16,11 @@ import PreviewExecution from './PreviewExecution';
 import DataTable from '@/components/DataTable';
 import SqlAudit from '@/components/SqlAudit';
 import InsightCard from '@/components/InsightCard';
+import AgentReasoningPipeline from '@/components/AgentReasoningPipeline';
+import {
+  buildLatestAgentRunViewModel,
+  isLatestAgentRunPart,
+} from '@/lib/chat-utils';
 
 // 定义稳定的常量以避免 React 死循环
 const EMPTY_ARRAY: any[] = [];
@@ -204,6 +209,23 @@ const MessagePart = React.memo(({
       );
     }
 
+    case 'data-agent-run': {
+      if (!isLatestAgentRunPart(allParts, index)) return null;
+      const runViewModel = buildLatestAgentRunViewModel(allParts);
+      if (!runViewModel) return null;
+
+      return (
+        <div key={`part-agent-run-${index}`} className="part-unit flow-part animate-fade-in">
+          <AgentReasoningPipeline
+            goal={runViewModel.goal}
+            selectedCapabilityIds={runViewModel.selectedCapabilityIds}
+            status={runViewModel.status}
+            steps={runViewModel.steps}
+          />
+        </div>
+      );
+    }
+
     case 'tool-askClarification': {
       const toolPart = part as any;
       if (!isDecisionPartReady(toolPart)) return null;
@@ -343,6 +365,10 @@ const MessagePart = React.memo(({
   
   if (p.type === 'text') {
     return p.text === n.text;
+  }
+
+  if (p.type === 'data-agent-run') {
+    return p.data === n.data;
   }
   
   if (p.toolCallId !== n.toolCallId) return false;

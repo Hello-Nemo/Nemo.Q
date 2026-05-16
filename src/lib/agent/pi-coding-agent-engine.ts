@@ -11,7 +11,8 @@ import { getModel } from "@earendil-works/pi-ai";
 import { chartTools } from '../tools/chart';
 import { commonTools } from '../tools/common';
 import { bridgeTools } from './adapter/tool-bridge';
-import { StreamProtocolAdapter } from './adapter/stream-protocol-adapter';
+import { StreamProtocolAdapter, toAgentRunDataPart } from './adapter/stream-protocol-adapter';
+import { advanceStep, completeRun, startRun } from './orchestrator/runtime';
 import fs from 'fs';
 import path from 'path';
 
@@ -98,11 +99,29 @@ export class PiCodingAgentEngine implements AgentEngine {
           const adapter = new StreamProtocolAdapter(writer, session, messageId);
           const adapterPromise = adapter.adapt();
 
+          let run = startRun(promptText, messageId);
+          for (const event of run.events) {
+            writer.write(toAgentRunDataPart(event) as any);
+          }
+
+          if (!run.state.plan.needsClarification) {
+            const firstStep = run.state.plan.steps[0];
+            if (firstStep) {
+              run = advanceStep(run, firstStep.id);
+              writer.write(toAgentRunDataPart(run.events.at(-1)!) as any);
+            }
+          }
+
           // 7. 发送 Prompt
           await session.prompt(promptText);
           
           // 等待流结束
           await adapterPromise;
+
+          if (run.state.status !== 'waiting_user') {
+            run = completeRun(run);
+            writer.write(toAgentRunDataPart(run.events.at(-1)!) as any);
+          }
         } catch (error: any) {
           console.error('[PiCodingAgentEngine] FATAL ERROR:', error);
           if (error.stack) {
@@ -123,4 +142,3 @@ export class PiCodingAgentEngine implements AgentEngine {
     return createUIMessageStreamResponse({ stream });
   }
 }
-

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "simple-answer",
+    "request": "你好，今天怎么样？",
+    "expectedIntent": "answer",
+    "expectedCapabilityIds": [],
+    "needsClarification": false,
+    "minSteps": 1,
+    "maxSteps": 1
+  },
+  {
+    "id": "single-skill-analysis",
+    "request": "查询最近一个月的销售额",
+    "expectedIntent": "analyze",
+    "expectedCapabilityIds": ["nemo-q"],
+    "needsClarification": false,
+    "minSteps": 3,
+    "maxSteps": 3
+  },
+  {
+    "id": "multi-step-analysis",
+    "request": "分析最近一个月各国家的销售额变化",
+    "expectedIntent": "analyze",
+    "expectedCapabilityIds": ["nemo-q"],
+    "needsClarification": false,
+    "minSteps": 3,
+    "maxSteps": 3
+  },
+  {
+    "id": "ambiguous-analysis",
+    "request": "帮我看看数据",
+    "expectedIntent": "clarify",
+    "expectedCapabilityIds": ["nemo-q"],
+    "needsClarification": true,
+    "minSteps": 1,
+    "maxSteps": 1
+  },
+  {
+    "id": "out-of-scope-request",
+    "request": "帮我预订明天去东京的机票",
+    "expectedIntent": "answer",
+    "expectedCapabilityIds": [],
+    "needsClarification": false,
+    "minSteps": 1,
+    "maxSteps": 1
+  }
+]

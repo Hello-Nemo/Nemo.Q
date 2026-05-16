@@ -1,5 +1,13 @@
 import { UIMessageStreamWriter, UIMessage, generateId } from 'ai';
 import { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AgentTraceEvent } from '../orchestrator/types';
+
+export function toAgentRunDataPart(event: AgentTraceEvent) {
+  return {
+    type: 'data-agent-run' as const,
+    data: event,
+  };
+}
 
 /**
  * 将 Pi Agent 的事件流适配为 AI SDK UI 协议

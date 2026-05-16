@@ -1,5 +1,6 @@
 import { COLUMN_LABELS, EXECUTION_TOOL_TYPES } from './chat-constants';
 import type { DecisionOption } from '@/components/DecisionPrompt';
+import type { AgentRunState, AgentTraceEvent } from '@/lib/agent/orchestrator/types';
 
 /**
  * 判断一个值是否具有数值特征（数字或可解析为数字的字符串）
@@ -95,4 +96,116 @@ export const buildClarificationOptions = (args: any): DecisionOption[] => {
   }
 
   return decisionOptions;
+};
+
+export type AgentRunTimelineStep = {
+  id: string;
+  label: string;
+  status: 'pending' | 'loading' | 'completed' | 'error';
+};
+
+export type AgentRunViewModel = {
+  goal: string;
+  status: AgentRunState['status'];
+  selectedCapabilityIds: string[];
+  steps: AgentRunTimelineStep[];
+};
+
+const mapRunStepStatus = (status: AgentRunState['plan']['steps'][number]['status']): AgentRunTimelineStep['status'] => {
+  switch (status) {
+    case 'running':
+      return 'loading';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+    case 'blocked':
+      return 'error';
+    case 'pending':
+    default:
+      return 'pending';
+  }
+};
+
+const applyTraceEvent = (
+  state: AgentRunState | undefined,
+  event: AgentTraceEvent
+): AgentRunState | undefined => {
+  switch (event.type) {
+    case 'run_created':
+      return event.payload.state;
+    case 'plan_created':
+      return state
+        ? {
+            ...state,
+            plan: event.payload.plan,
+          }
+        : state;
+    case 'capability_selected':
+      return state
+        ? {
+            ...state,
+            plan: {
+              ...state.plan,
+              selectedCapabilityIds: event.payload.capabilityIds,
+            },
+          }
+        : state;
+    case 'step_started':
+      return state
+        ? {
+            ...state,
+            status: 'executing',
+            currentStepId: event.payload.stepId,
+            plan: {
+              ...state.plan,
+              steps: state.plan.steps.map((step) => (
+                step.id === event.payload.stepId ? { ...step, status: 'running' } : step
+              )),
+            },
+          }
+        : state;
+    case 'step_completed':
+      return state
+        ? {
+            ...state,
+            plan: {
+              ...state.plan,
+              steps: state.plan.steps.map((step) => (
+                step.id === event.payload.stepId ? { ...step, status: 'completed' } : step
+              )),
+            },
+          }
+        : state;
+    case 'run_completed':
+      return event.payload.state;
+    default:
+      return state;
+  }
+};
+
+export const buildLatestAgentRunViewModel = (parts: any[]): AgentRunViewModel | null => {
+  const latestState = parts
+    .filter((part) => part?.type === 'data-agent-run' && part?.data)
+    .reduce<AgentRunState | undefined>((state, part) => (
+      applyTraceEvent(state, part.data as AgentTraceEvent)
+    ), undefined);
+
+  if (!latestState) return null;
+
+  return {
+    goal: latestState.userGoal,
+    status: latestState.status,
+    selectedCapabilityIds: latestState.plan.selectedCapabilityIds,
+    steps: latestState.plan.steps.map((step) => ({
+      id: step.id,
+      label: step.title,
+      status: mapRunStepStatus(step.status),
+    })),
+  };
+};
+
+export const isLatestAgentRunPart = (parts: any[], index: number) => {
+  if (parts[index]?.type !== 'data-agent-run') return false;
+
+  return !parts.slice(index + 1).some((part) => part?.type === 'data-agent-run');
 };

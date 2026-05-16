@@ -1,16 +1,15 @@
 # Data Agent 文档中心
 
-本目录用于沉淀 `data-agent` 的产品规划、技术架构、语义查询编译器方案、质量治理和迭代路线。
+本目录用于沉淀当前项目已经落地的产品、架构与演进资料。
 
 ## 文档索引
 
 | 文档 | 说明 |
 | --- | --- |
-| [产品规划](./product-plan.md) | 智能问数产品定位、目标用户、核心场景、产品原则和能力边界。 |
-| [技术架构](./technical-architecture.md) | 当前工程演进为可信智能问数 Agent 的整体架构设计。 |
+| [产品与技术概览](./data-agent-product-and-technical-docs.md) | 当前智能问数能力、模块划分与阶段性路线。 |
 | [语义查询编译器](./semantic-query-compiler.md) | 从自然语言到 Query Plan，再到动态 SQL 编译的核心技术方案。 |
-| [质量与治理](./quality-governance.md) | 准确性、安全、权限、审计、评测和上线门禁设计。 |
-| [迭代计划](./iteration-plan.md) | 从当前 Demo 到 MVP、商业化版本的分阶段路线图。 |
+| [品牌规范](./brand-identity.md) | Nemo.Q 的命名、视觉与语调约束。 |
+| [实施计划](./plans/2026-05-16-super-agent-runtime-implementation-plan.md) | Super Agent Runtime 第一阶段实施方案。 |
 
 ## 核心共识
 
@@ -58,7 +57,7 @@ Insight Generator
 - Clarification Flow 前端交互；
 - Insight Canvas 图表画布；
 - 结构化 `semantic-layer.json` (支持 Fact/Dimension 实体类型)；
-- 初版 `scripts/run-eval.ts` 评测脚本。
+- 初版评测样例与报告：`tests/eval/dataset.json`、`tests/eval/report.json`。
 
 
 后续演进重点是将这些能力从 Demo 链路升级为可验证、可治理、可评测的智能问数产品内核。

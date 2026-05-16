@@ -1,6 +1,6 @@
 import { generateText, stepCountIs } from 'ai';
 import { deepseek } from '@ai-sdk/deepseek';
-import { dbTools } from '@/lib/tools/db';
+import { dbTools } from '../../skills/nemo-q';
 import { chartTools } from '@/lib/tools/chart';
 import fs from 'fs';
 import path from 'path';
@@ -10,7 +10,7 @@ async function testLLM() {
   console.log('--- Starting LLM Integration Test ---');
   
   const semanticLayer = JSON.parse(
-    fs.readFileSync(path.join(process.cwd(), 'src/lib/semantic-layer.json'), 'utf8')
+    fs.readFileSync(path.join(process.cwd(), 'skills/nemo-q/lib/semantic-layer.json'), 'utf8')
   );
   
   const question = "统计不同品类的订单量，只要 Electronics 品类，按订单量降序排列。显示前5名。";

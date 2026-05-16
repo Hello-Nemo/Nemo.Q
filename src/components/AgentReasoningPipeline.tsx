@@ -19,6 +19,9 @@ export interface Step {
 
 interface PipelineProps {
   steps: Step[];
+  goal?: string;
+  selectedCapabilityIds?: string[];
+  status?: string;
 }
 
 export const getDefaultSteps = (): Step[] => [
@@ -28,7 +31,7 @@ export const getDefaultSteps = (): Step[] => [
   { id: '4', label: '结果可视化 (VISUALIZATION)', status: 'pending' },
 ];
 
-export default function AgentReasoningPipeline({ steps }: PipelineProps) {
+export default function AgentReasoningPipeline({ steps, goal, selectedCapabilityIds = [], status }: PipelineProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const currentStep = steps.find(s => s.status === 'loading') || steps.find(s => s.status === 'pending') || steps[steps.length - 1];
   const progressPercent = (steps.filter(s => s.status === 'completed').length / steps.length) * 100;
@@ -58,6 +61,17 @@ export default function AgentReasoningPipeline({ steps }: PipelineProps) {
       {/* Expanded Detailed Steps */}
       {isExpanded && (
         <div className="steps-detail animate-slide-down">
+          {(goal || selectedCapabilityIds.length > 0 || status) && (
+            <div className="run-meta">
+              {goal && <span className="run-goal">{goal}</span>}
+              <div className="run-tags">
+                {status && <span className="run-tag">{status}</span>}
+                {selectedCapabilityIds.map((capabilityId) => (
+                  <span key={capabilityId} className="run-tag">{capabilityId}</span>
+                ))}
+              </div>
+            </div>
+          )}
           {steps.map((step, idx) => (
             <div key={step.id} className={`step-row ${step.status}`}>
               <div className="step-icon">
@@ -121,6 +135,34 @@ export default function AgentReasoningPipeline({ steps }: PipelineProps) {
           flex-direction: column;
           gap: 12px;
           border-top: 1px solid var(--surface-border);
+        }
+
+        .run-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding-bottom: 4px;
+        }
+
+        .run-goal {
+          font-size: 12px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .run-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .run-tag {
+          border-radius: 999px;
+          background: rgba(59, 130, 246, 0.08);
+          color: var(--novapulse);
+          font-size: 10px;
+          font-weight: 800;
+          padding: 3px 8px;
         }
 
         .step-row { display: flex; align-items: center; gap: 12px; position: relative; }
