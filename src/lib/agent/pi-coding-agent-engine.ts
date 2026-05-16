@@ -17,7 +17,12 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Pi Coding Agent 引擎实现
+ * Pi Coding Agent 引擎实现。
+ *
+ * 这个类仍然负责“和底层 Pi Runtime 对接”，
+ * 但现在会在真正提示模型前后，挂接我们自己的 Orchestrator runtime：
+ * - 前置：生成计划并发出 trace
+ * - 后置：在运行结束时收束 run
  */
 export class PiCodingAgentEngine implements AgentEngine {
   readonly id = 'pi-coding-agent';
@@ -30,7 +35,7 @@ export class PiCodingAgentEngine implements AgentEngine {
       execute: async ({ writer }) => {
         const messageId = generateId();
         try {
-          // 1. 初始化 Auth 和 Model
+          // 1. 初始化 Auth 和 Model：先把底层模型运行环境准备好。
           const authStorage = AuthStorage.create();
           
           if (process.env.DEEPSEEK_API_KEY) {
@@ -39,17 +44,17 @@ export class PiCodingAgentEngine implements AgentEngine {
           
           const modelRegistry = ModelRegistry.create(authStorage);
           
-          // 2. 选择模型
+          // 2. 选择模型：UI 可以传入模型，否则走默认值。
           const targetModel = (options?.model || "deepseek-v4-flash") as "deepseek-v4-flash" | "deepseek-v4-pro";
           const model = getModel("deepseek", targetModel) || (await modelRegistry.getAvailable())[0];
 
-          // 3. 基础工具 (框架级)
+          // 3. 框架级工具：这些工具直接挂到 Pi Agent，不属于某个具体业务 skill。
           const customTools = [
             ...bridgeTools(chartTools),
             ...bridgeTools(commonTools)
           ];
 
-          // 4. 初始化 Loader (会自动加载 skills/ 目录)
+          // 4. 初始化 Loader：负责装载 system prompt 与 skills/ 资源。
           const promptPath = path.join(process.cwd(), 'src/lib/prompts/system-prompt.md');
           const systemPrompt = fs.existsSync(promptPath) ? fs.readFileSync(promptPath, 'utf8') : '';
           
@@ -65,10 +70,10 @@ export class PiCodingAgentEngine implements AgentEngine {
           });
           await loader.reload();
 
-          // 5. 创建 Session 并还原历史
+          // 5. 创建 Session 并还原历史：让新一轮请求延续已有上下文。
           const sessionManager = SessionManager.inMemory();
           
-          // 还原历史消息 (不包含当前最后一条)
+          // 只还原历史，不把本轮最新用户消息提前塞进去。
           await StreamProtocolAdapter.ingestHistory(sessionManager, messages.slice(0, -1));
 
           const { session } = await createAgentSession({
@@ -82,7 +87,7 @@ export class PiCodingAgentEngine implements AgentEngine {
             resourceLoader: loader
           });
 
-          // 6. 转换历史消息并启动适配器
+          // 6. 提取本轮真正要交给模型的用户文本。
           const lastMessage = messages[messages.length - 1];
           
           const promptText = lastMessage.parts
@@ -99,12 +104,15 @@ export class PiCodingAgentEngine implements AgentEngine {
           const adapter = new StreamProtocolAdapter(writer, session, messageId);
           const adapterPromise = adapter.adapt();
 
+          // 在模型开始回答前，先让 Orchestrator 形成“计划视图”并写入 trace。
           let run = startRun(promptText, messageId);
           for (const event of run.events) {
             writer.write(toAgentRunDataPart(event) as any);
           }
 
           if (!run.state.plan.needsClarification) {
+            // Phase 1 先只把第一步推进为执行中；
+            // 后续可以让真实 tool 事件反向驱动更多步骤的流转。
             const firstStep = run.state.plan.steps[0];
             if (firstStep) {
               run = advanceStep(run, firstStep.id);
@@ -112,13 +120,14 @@ export class PiCodingAgentEngine implements AgentEngine {
             }
           }
 
-          // 7. 发送 Prompt
+          // 7. 把原始请求交给底层模型执行。
           await session.prompt(promptText);
           
-          // 等待流结束
+          // 等待底层模型的流式输出完整结束。
           await adapterPromise;
 
           if (run.state.status !== 'waiting_user') {
+            // 如果当前不是“等用户补充信息”，则将这次 run 正常收束。
             run = completeRun(run);
             writer.write(toAgentRunDataPart(run.events.at(-1)!) as any);
           }

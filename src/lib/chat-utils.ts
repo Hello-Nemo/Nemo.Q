@@ -104,6 +104,7 @@ export type AgentRunTimelineStep = {
   status: 'pending' | 'loading' | 'completed' | 'error';
 };
 
+/** 前端渲染时间线真正需要的最小视图模型。 */
 export type AgentRunViewModel = {
   goal: string;
   status: AgentRunState['status'];
@@ -111,6 +112,7 @@ export type AgentRunViewModel = {
   steps: AgentRunTimelineStep[];
 };
 
+/** 把运行时步骤状态转换成现有 Timeline 组件能理解的 UI 状态。 */
 const mapRunStepStatus = (status: AgentRunState['plan']['steps'][number]['status']): AgentRunTimelineStep['status'] => {
   switch (status) {
     case 'running':
@@ -126,6 +128,12 @@ const mapRunStepStatus = (status: AgentRunState['plan']['steps'][number]['status
   }
 };
 
+/**
+ * 用一条 trace 事件，推进一份可供 UI 使用的运行状态。
+ *
+ * 这相当于前端侧的轻量 reducer：
+ * 服务端不断发事件，前端按顺序“回放”后得到最新状态。
+ */
 const applyTraceEvent = (
   state: AgentRunState | undefined,
   event: AgentTraceEvent
@@ -183,6 +191,12 @@ const applyTraceEvent = (
   }
 };
 
+/**
+ * 从整条消息的 data parts 中，重建最新一次 run 的视图模型。
+ *
+ * 不把完整 run state 直接绑死在 UI 上，而是先收敛成更稳定的展示结构，
+ * 这样后续 runtime 扩展字段时，前端不需要跟着一起剧烈变化。
+ */
 export const buildLatestAgentRunViewModel = (parts: any[]): AgentRunViewModel | null => {
   const latestState = parts
     .filter((part) => part?.type === 'data-agent-run' && part?.data)
@@ -204,6 +218,7 @@ export const buildLatestAgentRunViewModel = (parts: any[]): AgentRunViewModel | 
   };
 };
 
+/** 只渲染最新一条 run trace，避免一串事件各自生成重复时间线。 */
 export const isLatestAgentRunPart = (parts: any[], index: number) => {
   if (parts[index]?.type !== 'data-agent-run') return false;
 

@@ -1,5 +1,7 @@
 import { executeSemanticQueryPlan, queryPlanSchema } from '../../../../../skills/nemo-q';
 
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {

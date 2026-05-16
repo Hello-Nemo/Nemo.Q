@@ -2,6 +2,12 @@ import { UIMessageStreamWriter, UIMessage, generateId } from 'ai';
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentTraceEvent } from '../orchestrator/types';
 
+/**
+ * 把 Orchestrator trace 事件包装成 AI SDK 能随消息流传输的自定义 data part。
+ *
+ * 这样前端不需要另开一条 SSE / WebSocket 通道，
+ * 仍然可以在原有聊天流里还原运行时间线。
+ */
 export function toAgentRunDataPart(event: AgentTraceEvent) {
   return {
     type: 'data-agent-run' as const,
@@ -28,6 +34,7 @@ export class StreamProtocolAdapter {
     this.currentTextId = generateId();
   }
 
+  /** 结束当前文本块并准备接收新的文本片段。 */
   private startNewTextPart() {
     if (this.hasStartedText) {
       this.writer.write({ type: 'text-end', id: this.currentTextId });
@@ -36,6 +43,7 @@ export class StreamProtocolAdapter {
     this.hasStartedText = false;
   }
 
+  /** 结束当前 reasoning 块并准备新的 reasoning 片段。 */
   private startNewReasoningPart() {
     if (this.hasStartedReasoning) {
       this.writer.write({ type: 'reasoning-end', id: this.reasoningId });
@@ -115,6 +123,8 @@ export class StreamProtocolAdapter {
                   break;
 
                 case "toolcall_start": {
+                  // Pi 的 tool call 可能会在参数尚未完整时先发出开始事件；
+                  // 这里先占位，后续再把完整参数补进 UI 流。
                   this.startNewTextPart();
                   this.startNewReasoningPart();
                   this.pendingContentIndices.push(assistantEvent.contentIndex);
@@ -137,6 +147,8 @@ export class StreamProtocolAdapter {
                       inputTextDelta: assistantEvent.delta
                     });
                   } else {
+                    // 某些 Pi 事件在 delta 阶段还没有 toolCallId，
+                    // 先按 contentIndex 暂存，等真正执行时再回填。
                     if (!this.pendingToolDeltas.has(contentIndex)) {
                       this.pendingToolDeltas.set(contentIndex, []);
                     }
@@ -158,6 +170,7 @@ export class StreamProtocolAdapter {
               });
               
               if (this.pendingToolDeltas.has(contentIndex)) {
+                // 把之前缓存的输入增量补发给前端，确保 UI 能看到完整参数。
                 for (const delta of this.pendingToolDeltas.get(contentIndex)!) {
                   this.writer.write({
                     type: 'tool-input-delta',
@@ -180,6 +193,8 @@ export class StreamProtocolAdapter {
             case "tool_execution_end": {
               let result = event.result;
               if (result && typeof result === 'object' && 'details' in result) {
+                // bridgeTools 会保留一层 details 备份；
+                // UI 只需要真正的业务结果，所以这里做一次展开。
                 result = result.details;
               }
               this.writer.write({

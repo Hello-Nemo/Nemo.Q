@@ -4,6 +4,13 @@ import type {
   CapabilityDefinition,
 } from './types';
 
+/**
+ * Phase 1 先用轻量规则做规划。
+ *
+ * 这里的目标不是一次性造出通用语义理解器，
+ * 而是先把“什么时候直接答、什么时候澄清、什么时候进入多步分析”
+ * 这三个最重要的路径分开。
+ */
 const DATA_ANALYSIS_KEYWORDS = [
   '分析',
   '销售额',
@@ -15,20 +22,24 @@ const DATA_ANALYSIS_KEYWORDS = [
   '数据',
 ];
 
+/** 这些表达过于宽泛，先澄清再执行比盲目分析更可靠。 */
 const AMBIGUOUS_DATA_PATTERNS = [
   /看看数据/,
   /分析一下数据/,
   /看下数据/,
 ];
 
+/** 粗粒度判断当前请求是否像数据分析任务。 */
 function isDataAnalysisRequest(request: string): boolean {
   return DATA_ANALYSIS_KEYWORDS.some((keyword) => request.includes(keyword));
 }
 
+/** 判断请求是否只表达了“想看数据”，却没给出足够分析目标。 */
 function isAmbiguousDataRequest(request: string): boolean {
   return AMBIGUOUS_DATA_PATTERNS.some((pattern) => pattern.test(request));
 }
 
+/** 统一构造步骤，避免不同分支手写出风格不一致的计划对象。 */
 function buildStep(
   id: string,
   title: string,
@@ -48,10 +59,21 @@ function buildStep(
   };
 }
 
+/**
+ * 把用户请求转换成结构化计划。
+ *
+ * 这里暂时把意图识别和计划生成放在同一层：
+ * - 简单问答：直接回答
+ * - 模糊分析：先澄清
+ * - 明确分析：走“理解 -> 委派 -> 汇总”三步
+ *
+ * 等未来出现第二个调用方或更复杂路由，再把 intent analyzer 单独拆出去。
+ */
 export function createPlan(request: string, capabilities: CapabilityDefinition[]): AgentPlan {
   const dataCapabilities = capabilities.filter((capability) => capability.intents.includes('analyze'));
   const selectedCapabilityIds = dataCapabilities.map((capability) => capability.id);
 
+  // 模糊请求优先进入澄清分支，避免 Agent 在缺少目标时自行脑补。
   if (isAmbiguousDataRequest(request)) {
     return {
       goal: request,
@@ -71,6 +93,7 @@ export function createPlan(request: string, capabilities: CapabilityDefinition[]
     };
   }
 
+  // 明确的数据分析任务，进入最小的三步编排闭环。
   if (isDataAnalysisRequest(request) && selectedCapabilityIds.length > 0) {
     return {
       goal: request,
@@ -105,6 +128,7 @@ export function createPlan(request: string, capabilities: CapabilityDefinition[]
     };
   }
 
+  // 其余请求在 Phase 1 先按“无需工具的直接回答”处理。
   return {
     goal: request,
     primaryIntent: 'answer',
