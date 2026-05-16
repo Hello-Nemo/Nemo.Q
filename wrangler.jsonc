@@ -1,5 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  "minify": true,
   "main": ".open-next/worker.js",
   "name": "ai-sdk-demo",
   "compatibility_date": "2026-05-15",
